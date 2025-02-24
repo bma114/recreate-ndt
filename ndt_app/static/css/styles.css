@@ -1,0 +1,65 @@
+/* Apply background color */
+body {
+	font-family: Arial, sans-serif;
+	background-color: #662D91 !important; /* Enssures override */
+	margin: 10px;
+	padding: 20px;
+	color: white;
+}
+
+
+/* Style the logo banner */
+.logo-banner {
+    text-align: center;
+    background-color: #662D91;
+    padding: 10px;
+}
+
+.logo-banner img {
+    width: 1315px; /* Adjust as needed */
+    height: auto;
+    display: block;
+    margin: 0 auto;
+}
+
+/* Style the form container */
+.container {
+    background: white;
+    color: black;
+	padding: 20px;
+    border-radius: 10px;
+    box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+/* Adjust spacings between headers and bars */
+.mb-3 {
+    margin-bottom: 15px !important;
+}
+
+.feature-group {
+    margin-bottom: 15px !important;
+}
+
+/* Tooltip styling */
+.info-icon {
+    cursor: pointer;
+    color: black;
+    font-size: 14px;
+    margin-left: 5px;
+}
+.tooltip-inner {
+    text-align: left !important;
+}
+
+
+form {
+	background: white;
+	padding: 10px;
+	border-radius: 5px;
+	box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.1);
+}
+/* Ensure uniform input field lengths */
+.form-control {
+    width: 100%;
+}
+

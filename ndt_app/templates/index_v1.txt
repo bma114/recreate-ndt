@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	{% load static %}
+
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Concrete Strength Prediction</title>
+	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+	<h2>Predict Concrete Strength</h2>
+
+	<label for="net">Select NDT Type:</label>
+	<select id="ndt">
+		<option value="upv">UPV</option>
+		<option value="rh">Rebound Hammer</option>
+		<option value="sonreb">SonReb</option>
+	</select>
+
+	<div id="input-fields">
+		<label for="feature1">Country:</label>
+		<input type="text" id="feature1" required><br>
+
+		<label for="feature2">Specimen Type:</label>
+		<select id="feature3" required>
+			<option value="cyl lab">Cylinder - Laboratory</option>
+			<option value="cyl insitu">Cylinder - In-situ</option>
+			<option value="cyl onsite">Cylinder - On-site</option>
+			<option value="cube lab">Cube - Laboratory</option>
+			<option value="elmt lab">Element - Laboratory</option>
+			<option value="elmt insitu">Element - In-situ</option>
+		</select><br>
+
+		<label for="feature3">Was Rebar Present?:</label>
+		<select id="feature3" required>
+			<option value="true">True</option>
+			<option value="false">False</option>
+		</select><br>
+
+		<label for="feature4">UPV Device Brand and Model:</label>
+		<input type="text" id="feature4" required><br>
+
+		<label for="feature5">Standard:</label>
+		<input type="text" id="feature5" required><br>
+
+		<label for="feature6">Test Type:</label>
+		<select id="feature6" required>
+			<option value="direct">Direct</option>
+			<option value="semi_direct">Semi-direct</option>
+			<option value="indirect">Indirect</option>
+		</select><br>
+
+		<label for="feature7">Concrete Specimen:</label>
+		<select id="feature7" required>
+			<option value="cylinder">Cylinder</option>
+			<option value="cube">Cube</option>
+		</select><br>
+
+		<label for="feature8">Specimen Age (days):</label>
+		<input type="number" id="feature8" name="upv" required><br>
+
+		<label for="feature9">Transducer Diameter (mm (optional)):</label>
+		<input type="number" id="feature9"><br>
+
+		<label for="feature10">Transducer Frequency (kHz) (optional):</label>
+		<input type="number" id="feature10"><br>
+
+		<label for="feature11">Number of UPV Tests:</label>
+		<input type="number" id="feature11" required><br>
+
+		<label for="feature12">Velocity, Vp (m/s):</label>
+		<input type="number" id="feature12" required><br>
+
+		<label for="feature13">Max Aggregate Size (mm) (optional):</label>
+		<input type="number" id="feature13"><br>
+
+		<label for="feature14">W/C Ratio (optional):</label>
+		<input type="number" id="feature14"><br>
+
+		<label for="feature15">Design Strength (MPa) (optional):</label>
+		<input type="number" id="feature15"><br>
+
+		<label for="feature16">Concrete Specimen Height (mm):</label>
+		<input type="number" id="feature16" required><br>
+
+		<label for="feature17">Concrete Specimen Width/Diameter (mm):</label>
+		<input type="number" id="feature17" required><br>
+	</div>
+
+	<button onclick="predict()">Predict</button>
+
+	<h3>Prediction Result: <span id="result"></span><h3>
+
+	<script>
+		function predict() {
+			let ndt = document.getElementByID("ndt").value;
+			let features = [
+				parseFloat(document.getElementByID("feature1").value),
+				parseFloat(document.getElementByID("feature2").value),
+				parseFloat(document.getElementByID("feature3").value),
+				parseFloat(document.getElementByID("feature4").value)
+			];
+
+			fetch("/predict/", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json"
+				},
+				body: JSON.stringify({
+					ndt: ndt,
+					features: features
+				})
+			})
+			.then(response => response.json())
+			.then(data => {
+				document.getElementByID("result").innerText = data.prediction;
+			})
+			.catch(error => {
+				console.error("Error:", error);
+			});
+		}
+	</script>
+</body>
+</html>
+		
+
+
+
+
+
+
+
+	
