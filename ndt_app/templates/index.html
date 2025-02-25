@@ -20,6 +20,9 @@
 
 
 <body>
+    <form method="POST" id="prediction-form">
+        {% csrf_token %}
+    </form>
 
     <!-- Logo Banner -->
     <div class="logo-banner">
@@ -38,7 +41,7 @@
             <p>
             The UPV models are trained and tested on a database of 4,850 test results from 67 published studies, the RH models on a database of 7,400 test results 
             from 59 published studies, and the SonReb models on a database of 2,735 test results from 41 published studies. The final optimized models produce an 
-            average mean absolute error (MAE) of 3.46 MPa, 5.08 MPa and 2.34 MPa for the UPV, RH, and SonReb models, respectively.
+            average mean absolute error (MAE) of 3.00 MPa, 4.96 MPa and 2.03 MPa for the UPV, RH, and SonReb models, respectively.
             </p>
             <p>
             Several fields are left optional since there may be many cases where this information is unknown (for example, in existing structures). However, the more information that 
@@ -545,6 +548,14 @@
             return isValid;
         }
 
+
+        function getCSRFToken() {
+            // Get the CSRF token from the hidden form field
+            const csrfToken = document.querySelector('[name="csrfmiddlewaretoken"]').value;
+            return csrfToken;
+        }
+
+
         function predict() {
             // Clear previous prediction result
             document.getElementById("result").innerText = "";
@@ -594,7 +605,8 @@
             fetch("/predict/", {
                 method: "POST",
                 headers: {
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": getCSRFToken()  // Add CSRF token here
                 },
                 body: JSON.stringify(requestData)
             })
