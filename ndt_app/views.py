@@ -161,7 +161,7 @@ def predict_strength(features, ndt, scaler):
     return float(np.mean(predictions))
 
 
-@csrf_exempt  # Disable CSRF for simplicity in testing
+# @csrf_exempt  # Disable CSRF for simplicity in testing
 def predict_view(request):
     if request.method == 'POST':
         try:
