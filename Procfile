@@ -1,0 +1,1 @@
+web: gunicorn ndt_project.wsgi --log-file -
