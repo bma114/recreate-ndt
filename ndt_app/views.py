@@ -41,7 +41,7 @@ models = {ndt: [] for ndt in ndt_types}
 
 
 for ndt in ndt_types:
-    for i in range(1, 11):  # Load 10 models per NDT
+    for i in range(1, 6):  # Load 10 models per NDT
         model_key = f"Models/{ndt}_catboost_model_fold{i}.pkl"
         response = s3_client.get_object(Bucket=AWS_BUCKET_NAME, Key=model_key)
         model = joblib.load(BytesIO(response['Body'].read()))
@@ -117,9 +117,6 @@ def preprocess_features(features, ndt, scaler):
         if feature_id in feature_mapping:
             model_feature_name = feature_mapping[feature_id]
             mapped_features[model_feature_name] = feature_value
-    
-    # # Debugging: Print out the mapped features to check for correctness
-    print(f"Mapped Features: {mapped_features}")
 
     # Convert to DataFrame with the correct column names (use mapped_features and feature_order)
     df = pd.DataFrame([mapped_features], columns=feature_order)
@@ -132,19 +129,11 @@ def preprocess_features(features, ndt, scaler):
     # Normalize categorical features
     categorical_df = categorical_df.astype("string").fillna("missing")  # Handle missing values
     categorical_df = categorical_df.apply(lambda col: col.str.lower().str.strip().str.replace(r'\s+', ' ', regex=True))
-
-    # # Debugging: Print out the DataFrame to check feature names
-    print(f"Feature DataFrame:\n{df.to_string(index=False)}")  # Print entire DataFrame
-
-    # # Debugging: Print out the entire categorical and numerical DataFrames
-    print(f"\nCategorical Data:\n{categorical_df.to_string(index=False)}")
-    print(f"\nNumerical Data:\n{numerical_df.to_string(index=False)}")
     
     # Ensure that categorical features are not passed through the scaler, just the numerical ones
     # Apply transform to numerical data (we only scale numerical features)
-    print(f"Numerical Data before scaling:\n{numerical_df.to_string(index=False)}")
     scaled_numerical = scaler.transform(numerical_df)
-    print(f"Scaled Numerical Data:\n{scaled_numerical}")
+
     
     # Combine categorical and scaled numerical features
     processed_df = pd.concat([pd.DataFrame(scaled_numerical, columns=numerical_df.columns), categorical_df], axis=1)
