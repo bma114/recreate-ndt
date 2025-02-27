@@ -41,7 +41,7 @@ models = {ndt: [] for ndt in ndt_types}
 
 
 for ndt in ndt_types:
-    for i in range(1, 11):  # Load 10 models per NDT
+    for i in range(1, 6):  # Load 5 models per NDT
         model_key = f"Models/{ndt}_catboost_model_fold{i}.pkl"
         response = s3_client.get_object(Bucket=AWS_BUCKET_NAME, Key=model_key)
         model = joblib.load(BytesIO(response['Body'].read()))
