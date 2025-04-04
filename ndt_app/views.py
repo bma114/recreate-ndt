@@ -122,7 +122,7 @@ def preprocess_features(features, ndt, scaler):
     df = pd.DataFrame([mapped_features], columns=feature_order)
 
     # Separate categorical and numerical features
-    categorical_cols = list(categorical_features.intersection(feature_order))
+    categorical_cols = [col for col in feature_order if col in categorical_features]
     categorical_df = df[categorical_cols]  
     numerical_df = df.drop(columns=categorical_df.columns)
 
