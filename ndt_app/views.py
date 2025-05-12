@@ -1,14 +1,15 @@
-import os
+import os, json, gc
 import joblib
 import numpy as np
 import pandas as pd
 import boto3
-from django.shortcuts import render
+from io import BytesIO
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-import json
-from io import BytesIO
+from django.shortcuts import render
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
+import catboost as cb
+
 import re  # Required for regex replacements
 import environ
 
@@ -24,7 +25,7 @@ def home(request):
 
 # AWS S3 Configuration
 AWS_BUCKET_NAME = "compressive-strength-ndt"
-S3_MODEL_PREFIX = "models/"
+# S3_MODEL_PREFIX = "models/"
 
 
 # Initialize S3 client
@@ -34,36 +35,47 @@ s3_client = boto3.client(
     aws_secret_access_key=env("AWS_SECRET_KEY")
 )
 
+SCALER_PATH   = "scalers/{ndt}_scaler.pkl"
+MODEL_PATTERN = "Models/{ndt}_catboost_model_fold{fold}_cmp.pkl"
 
-# Load all models from S3
-ndt_types = ["upv", "rh", "sonreb"]  # Example NDT types
-models = {ndt: [] for ndt in ndt_types}
-
-
-for ndt in ndt_types:
-    for i in range(1, 6):  # Load 5 models per NDT
-        model_key = f"Models/{ndt}_catboost_model_fold{i}.pkl"
-        response = s3_client.get_object(Bucket=AWS_BUCKET_NAME, Key=model_key)
-        model = joblib.load(BytesIO(response['Body'].read()))
-        models[ndt].append(model)
+# Global in-memory cache
+_models_cache = {}
 
 
 # Function to load scaler from S3
-def load_scaler_from_s3(ndt_type):
-    """Fetches the scaler from S3 and returns the loaded object."""
-    scaler_key = f"scalers/{ndt_type}_scaler.pkl"  # Assuming the scalers are stored in a "Scalers" folder in S3
-    
+def load_scaler(ndt):
+    """Fetches the scaler from S3 and returns the loaded object."""    
     file_stream = BytesIO()
-    s3_client.download_fileobj(AWS_BUCKET_NAME, scaler_key, file_stream)
-
+    s3_client.download_fileobj(AWS_BUCKET_NAME, SCALER_PATH.format(ndt=ndt), file_stream)
     file_stream.seek(0)
     scaler = joblib.load(file_stream)
 
     # Verify the scaler is a valid instance of a scikit-learn scaler
     if not isinstance(scaler, (MinMaxScaler, StandardScaler)):
-        raise TypeError(f"Scaler is not of type 'MinMaxScaler' or 'StandardScaler', but is of type {type(scaler)}")
+        raise TypeError(f"Scaler wrong type: {type(scaler)}")
     
     return scaler
+
+# Function to load models from S3
+def get_models(ndt):
+    # if not yet loaded, fetch from S3 and cache
+    if ndt not in _models_cache:
+        # purge other NDTs
+        for other in list(_models_cache):
+            if other != ndt:
+                del _models_cache[other]
+        gc.collect()
+
+        folds = []
+        for i in range(1, 11):
+            file_stream = BytesIO()
+            key = MODEL_PATTERN.format(ndt=ndt, fold=i)
+            s3_client.download_fileobj(AWS_BUCKET_NAME, key, file_stream)
+            file_stream.seek(0)
+            folds.append(joblib.load(file_stream))
+        _models_cache[ndt] = folds
+
+    return _models_cache[ndt]
 
 feature_columns = {
     "upv": ["Country", "Specimen Type", "Specimen Age (days)", "Rebar Present", "UPV_Device_Brand", "Transducer Diameter (mm)", 
@@ -118,6 +130,9 @@ def preprocess_features(features, ndt, scaler):
             model_feature_name = feature_mapping[feature_id]
             mapped_features[model_feature_name] = feature_value
     
+    # # Debugging: Print out the mapped features to check for correctness
+    print(f"Mapped Features: {mapped_features}")
+
     # Convert to DataFrame with the correct column names (use mapped_features and feature_order)
     df = pd.DataFrame([mapped_features], columns=feature_order)
 
@@ -130,9 +145,15 @@ def preprocess_features(features, ndt, scaler):
     categorical_df = categorical_df.astype("string").fillna("missing")  # Handle missing values
     categorical_df = categorical_df.apply(lambda col: col.str.lower().str.strip().str.replace(r'\s+', ' ', regex=True))
 
-    # Ensure that categorical features are not passed through the scaler, just the numerical ones
+    # Debugging: Print out the DataFrame to check feature names, and entire categorical and numerical DataFrames
+    print(f"Feature DataFrame:\n{df.to_string(index=False)}")  # Print entire DataFrame
+    print(f"\nCategorical Data:\n{categorical_df.to_string(index=False)}")
+    print(f"\nNumerical Data:\n{numerical_df.to_string(index=False)}")
+    
     # Apply transform to numerical data (we only scale numerical features)
+    print(f"Numerical Data before scaling:\n{numerical_df.to_string(index=False)}")
     scaled_numerical = scaler.transform(numerical_df)
+    print(f"Scaled Numerical Data:\n{scaled_numerical}")
     
     # Combine categorical and scaled numerical features
     processed_df = pd.concat([pd.DataFrame(scaled_numerical, columns=numerical_df.columns), categorical_df], axis=1)
@@ -141,89 +162,68 @@ def preprocess_features(features, ndt, scaler):
 
 def predict_strength(features, ndt, scaler):
     """Runs a prediction using all trained models and returns the average."""
-    if ndt not in models:
-        return JsonResponse({"error": f"Invalid NDT type: {ndt}"}, status=400)  # Ensure the NDT type is valid
     
-    processed_features = preprocess_features(features, ndt, scaler)
-    predictions = [model.predict(processed_features)[0] for model in models[ndt]]
-    return float(np.mean(predictions))
+    df = preprocess_features(features, ndt, scaler)
+    print(f"Input to model: {df}")  # Check what is being passed to the model
+
+    # Determine the categorical feature indices using the same ordering as in training:
+    cat_feature_indices = [df.columns.get_loc(col) for col in df.columns 
+                           if col in categorical_features]
+    print(f"Categorical feature indices: {cat_feature_indices}")
+
+    # Build a Pool with these indices so catboost knows which columns are categorical
+    data_pool = cb.Pool(df, cat_features=cat_feature_indices)
+
+    # Lazy-load exactly the 10 models you need
+    models = get_models(ndt)
+
+    # Run each model and collect predictions
+    preds = []
+    for m in models:
+        p = m.predict(data_pool)[0]
+        preds.append(p)
+    print(f"Raw predictions: {preds}")
+
+    # Return the mean
+    return float(np.mean(preds))
 
 
-# @csrf_exempt  # Disable CSRF for simplicity in testing
+@csrf_exempt  # Disable CSRF for simplicity in testing
 def predict_view(request):
-    if request.method == 'POST':
-        try:
-            # Parse JSON data from request
-            data = json.loads(request.body)
-            print("Received data in backend:", data)  # Debugging
-
-            ndt_type = data.get("ndt")
-            features = data.get("features", {})
-
-            print(f"NDT type: {ndt_type}")  
-            print(f"Received Features:", features)
-
-            if not features:
-                return JsonResponse({"error": "Features are missing!"}, status=400)
-            
-            # Check if NDT type is valid
-            if ndt_type not in models:
-                return JsonResponse({"error": "Invalid NDT type selected."}, status=400)
-
-            # Load the correct scaler from S3
-            scaler = load_scaler_from_s3(ndt_type)
-
-            # Extract and preprocess features
-            if not isinstance(features, dict):
-                return JsonResponse({"error": "Features should be a dictionary."}, status=400)
-            
-            # Make prediction based on correct models
-            prediction = predict_strength(features, ndt_type, scaler)
-
-            # Reverse the transformation
-            if ndt_type == "upv" or ndt_type == "sonreb":
-                # Reverse the log transformation for UPV and SonReb
-                prediction = np.exp(prediction)
-            elif ndt_type == "rh":
-                # Reverse the square root transformation for RH
-                prediction = np.square(prediction)
-
-            # Format the result to 2 decimal places
-            if ndt_type == "rh":
-                prediction_result = f"f<sub>c,cyl</sub> = {prediction:.2f} MPa"
-            else:
-                prediction_result = f"f<sub>c,cyl</sub> = {prediction:.2f} MPa"
-
-            # Returning HTML formatted result
-            return JsonResponse({'prediction': prediction_result})
-
-            # return JsonResponse({'prediction': prediction})
-
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=400)
-    else:
-        return JsonResponse({'message': 'Send a POST request with input data.'})
-
-
-
-# def predict_strength(features, ndt, scaler):
-#     """Runs a prediction using all 10 trained models and returns the weighted average."""
+    if request.method != 'POST':
+        return JsonResponse({'message':'Send a POST request with input data'}, status=405)
     
-#     # Define categorical feature indices (assumes known order)
-#     categorical_feature_indices = [0, 1, 2, 3, 4, 5, 6]  # Adjust based on actual feature list
-    
-#     categorical_features = features[:, categorical_feature_indices]
-#     numerical_features = np.delete(features, categorical_feature_indices, axis=1)
+    try:
+        # Parse JSON data from request
+        data = json.loads(request.body)
+        # print("Received data in backend:", data)  # Debugging: Print raw data
 
-#     # Scale numerical features
-#     scaled_numerical = scaler.transform(numerical_features)
-    
-#     # Combine scaled numerical + categorical into a DataFrame
-#     features_combined = np.hstack((categorical_features, scaled_numerical))
-#     features_df = pd.DataFrame(features_combined, columns=[f"f{i}" for i in range(features_combined.shape[1])])
+        ndt = data.get("ndt")
+        features = data.get("features", {})
 
-#     # Run predictions using all models and average
-#     predictions = [model.predict(features_df)[0] for model in models[ndt]]
-#     avg_prediction = np.mean(predictions)
-    
-#     return float(avg_prediction)
+        # print(f"Received Features:", features) # Debugging: Print features
+
+        if ndt not in ["upv","rh","sonreb"] or not isinstance(features, dict):
+            return JsonResponse({"error":"Invalid request"}, status=400)
+        
+        # Load the correct scaler from S3
+        scaler = load_scaler(ndt)
+        
+        # Make prediction based on correct models
+        prediction = predict_strength(features, ndt, scaler)
+
+        # Reverse the transformation
+        if ndt in ("upv", "sonreb"):
+            prediction = np.exp(prediction) # Reverse the log transformation
+        elif ndt == "rh":
+            prediction = np.square(prediction) # Reverse the square root transformation
+
+        prediction_result = f"f<sub>c,cyl</sub> = {prediction:.2f} MPa"
+        print(f"Prediction Result: {prediction_result}")  # Debugging: Print prediction result
+
+        # Returning HTML formatted result
+        return JsonResponse({'prediction': prediction_result})
+
+    except Exception as e:
+        print(f"Error: {e}")  # Debugging: Print error message
+        return JsonResponse({'error': str(e)}, status=400)
