@@ -42,3 +42,4 @@ threadpoolctl==3.5.0
 tzdata==2025.1
 urllib3==2.3.0
 Werkzeug==3.0.3
+whitenoise==6.9.0
