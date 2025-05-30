@@ -1,0 +1,394 @@
+{# templates/partials/analysis_combined.html #}
+
+<div class="container mt-4 text-black">
+    <h1 class="text-center"><strong>Destructive + Non-Destructive Testing
+      <small class="d-block">EN 13791:2019 Test Region Analysis</small></strong></h1>
+</div>
+
+
+<!-- <form id="combined-form" onsubmit="event.preventDefault(); {analyseCombined(); }"> -->
+<form id="combined-form" novalidate>
+
+  <!-- NDT Selection -->
+  <div class="text-center mb-4">
+      <label for="combined_ndt" class="form-label h5">Select an NDT Method:</label>
+      <select id="combined_ndt" name="combined_ndt" class="form-select w-50 mx-auto" required>
+        <option value="" disabled selected>Select an option</option>
+        <option value="upv">Ultrasonic Pulse Velocity (UPV)</option>
+        <option value="rh">Rebound Hammer (RH)</option>
+        <option value="sonreb">SonReb (UPV + RH)</option>
+      </select>
+      <div class="error-message text-danger" style="display:none"></div>
+  </div>
+
+  <div id="combined-features-card" class="card mb-4 shadow-sm" style="display:none">
+      <div class="card-body">
+          <div class="row gx-4">
+            <!-- Left column: metadata -->
+            <div class="col-md-6">
+                <h4 class="section-header"><strong>Metadata</strong></h4>
+                <div class="mb-3">
+                    <label for="country" class="form-label">Country: <span class="text-danger">*</span></label>
+                        <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
+                        title="Enter the country where the concrete was produced. Ensure the spelling is correct."></span>
+                    <input type="text" id="country" name="country" class="form-control" required data-ndt>
+                    <div class="error-message" style="color: red; display: none;"></div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="specimen_type" class="form-label">NDT Specimen Type: <span class="text-danger">*</span></label>
+                        <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
+                        title="Select the type of specimen on which the NDTs were performed."></span>
+                    <select id="specimen_type" name="specimen_type" class="form-select" required data-ndt>
+                        <option value="" selected disabled>Select an option</option>
+                        <option value="Cylinder - In-situ">Cylinder - Drilled In-situ</option>
+                        <option value="Element - In-situ">Element - In-situ</option>
+                    </select>
+                    <div class="error-message" style="color: red; display: none;"></div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="specimen_age" class="form-label">Specimen Age (days): <span class="text-danger">*</span></label>
+                        <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" data-bs-html="true" 
+                        title="Enter the age of the concrete specimen. If the age is unknown, e.g. for an existing structure, enter an estimation of the construction period in days."></span>
+                    <input type="number" id="specimen_age" name="specimen_age" class="form-control" required data-ndt>
+                    <div class="error-message" style="color: red; display: none;"></div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="rebar_present" class="form-label">Was Rebar Present? <span class="text-danger">*</span></label>
+                        <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
+                        title="If the NDT was performed at a location with embedded rebar in the direct path, select True."></span>
+                    <select id="rebar_present" name="rebar_present" class="form-select" required data-ndt>
+                        <option value="" selected disabled>Select an option</option>
+                        <option value="TRUE">True</option>
+                        <option value="FALSE">False</option>
+                    </select>
+                    <div class="error-message" style="color: red; display: none;"></div>
+                </div>
+
+        <!-- Concrete specimen features --> 
+              <!-- Continued from input-fields container --> 
+              <div class="col-md-10 feature-group">
+                <h4 class="section-header"><strong>Concrete Details</strong></h4>
+                <div class="mb-3">
+                    <label for="max_agg" class="form-label">Max Aggregate Size (mm): (optional)</label>
+                        <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
+                        title="If known, enter the maximum aggregate size used in the concrete mixture, in millimeters."></span>
+                    <input type="number" id="max_agg" name="max_agg" class="form-control" step="any">
+                </div>
+
+                <div class="mb-3">
+                    <label for="wc_ratio" class="form-label">W/C Ratio: (optional)</label>
+                        <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
+                        title="If known, enter the water/cement ratio of the concrete mixture."></span>
+                    <input type="number" id="wc_ratio" name="wc_ratio" class="form-control" step="any">
+                </div>
+
+                <div class="mb-3">
+                    <label for="design_strength" class="form-label">Target 28-Day Strength (MPa): (optional) </label>
+                        <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
+                        title="If known, enter the original target 28-day strength for the concrete mixture, in megapascals."></span>
+                    <input type="number" id="design_strength" name="design_strength" class="form-control" step="any">
+                </div>
+              </div>
+            </div>
+
+            <!-- Right column: NDT details -->
+            <div class="col-md-6">
+              <!-- UPV specific features -->
+                <div id="combined-upv-block" style="display:none" class="col-md-10 feature-group">
+                  <h4 class="section-header"><strong>UPV Details</strong></h4>
+                  <div class="mb-3">
+                      <label for="upv" class="form-label">UPV Device Brand and Model: <span class="text-danger">*</span>
+                          <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
+                          title="Enter the UPV device brand and model (in that order). Ensure the spelling is correct."></span>
+                      </label>
+                      <input type="text" id="upv_device_brand" name="upv_device_brand" class="form-control" required data-ndt="upv">
+                      <div class="error-message" style="color: red; display: none;"></div>
+                  </div>
+
+                  <div class="mb-3">
+                      <label for="upv" class="form-label">Transducer Diameter (mm): (optional) </label>
+                          <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
+                          title="Enter the diameter of the transducer used during the UPV test, in millimeters."></span>
+                      <input type="number" id="upv_transd_diam" name="upv_transd_diam" class="form-control" step="any" data-ndt="upv" data-optional>
+                  </div>
+
+                  <div class="mb-3">
+                      <label for="upv" class="form-label">Transducer Frequency (kHz): (optional) </label>
+                          <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
+                          title="Enter the transducer frequency used during the UPV test, in kHz."></span>
+                      <input type="number" id="upv_transd_freq" name="upv_transd_freq" class="form-control" step="any" data-ndt="upv" data-optional>
+                  </div>
+
+                  <div class="mb-3">
+                      <label for="upv" class="form-label">UPV Standard: <span class="text-danger">*</span></label>
+                          <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
+                          title="Enter the guidelines which were followed when performing the UPV tests in 'Standard (year)' format."></span>
+                      <select id="upv_standard" name="upv_standard" class="form-select" required data-ndt="upv">
+                          <option value="" selected disabled>Select an option</option>
+                          <option value="ASTM C597 (1983)">ASTM C597 (1983)</option>
+                          <option value="ASTM C597 (1989)">ASTM C597 (1989)</option>
+                          <option value="ASTM C597 (1994)">ASTM C597 (1994)</option>
+                          <option value="ASTM C597 (2002)">ASTM C597 (2002)</option>
+                          <option value="ASTM C597 (2009)">ASTM C597 (2009)</option>
+                          <option value="ASTM C597 (2016)">ASTM C597 (2016)</option>
+                          <option value="ASTM C597 (2022)">ASTM C597 (2022)</option>
+                          <option value="bs4408_5">BS 4408: Part 5 (1974)</option>
+                          <option value="BS 4408: Part 5 (1974)">BS 1881-203 (1986)</option>
+                          <option value="EN 12504-4 (2004)">EN 12504-4 (2004)</option>
+                          <option value="EN 12504-4 (2004)">EN 12504-4 (2019)</option>
+                          <option value="EN 12504-4 (2004)">EN 12504-4 (2021)</option>
+                          <option value="IS 13311: Part 1 (1992)">IS 13311: Part 1 (1992)</option>
+                          <option value="UNE 83-308 (1986)">UNE 83-308 (1986)</option>
+                          <option value="NBR 8802 (2013)">NBR 8802 (2013)</option>
+                          <option value="other_upv">Other</option>
+                      </select>
+                      
+                      <!-- Hidden input for custom standard -->
+                      <div id="comb-custom-upv-container" style="display: none; margin-top: 10px;">
+                          <label for="comb-custom-upv" class="form-label">
+                              Enter Custom UPV Standard: <span class="text-danger">*</span>
+                          </label>
+                          <input type="text" id="comb-custom-upv" name="custom_upv" class="form-control" placeholder="Please enter the Standard (year)." data-ndt="upv">
+                          <div class="error-message text-danger" style="display:none;"></div>
+                      </div>
+
+                      <div class="error-message" style="color: red; display: none;"></div>
+                  </div>
+
+                  <div class="mb-3">
+                      <label for="upv" class="form-label">Test Type: <span class="text-danger">*</span></label>
+                          <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" title="Select the UPV transmission configuration."></span>
+                      <select id="test_type" name="test_type" class="form-select" required data-ndt="upv">
+                          <option value="" selected disabled>Select an option</option>
+                          <option value="Direct">Direct</option>
+                          <option value="Semi-direct">Semi-direct</option>
+                          <option value="Indirect">Indirect</option>
+                      </select>
+                      <div class="error-message" style="color: red; display: none;"></div>
+                  </div>
+
+                  <div class="mb-3">
+                      <label for="upv" class="form-label">Number of UPV Tests: <span class="text-danger">*</span></label>
+                          <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
+                          title="Enter the number of UPV tests performed at each test location. The final reported velocity should be the mean value."></span>
+                      <input type="number" id="no_upv_tests" name="no_upv_tests" class="form-control" required data-ndt="upv">
+                      <div class="error-message" style="color: red; display: none;"></div>
+                  </div>
+              </div>
+
+              <!-- RH-specific features -->
+              <div id="combined-rh-block" class="col-md-10 feature-group">
+                  <h4 class="section-header"><strong>Rebound Hammer Details</strong></h4>
+                  <div class="mb-3">
+                      <label for="rh" class="form-label">RH Device Brand and Model: <span class="text-danger">*</span></label>
+                          <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
+                          title="Enter the Rebound Hammer device brand and model (in that order). Ensure the spelling is correct.
+                          Don't forget to specify the type (e.g. Type N)"></span>
+                      <input type="text" id="rh_device_brand" name="rh_device_brand" class="form-control" required data-ndt="rh">
+                      <div class="error-message" style="color: red; display: none;"></div>
+                  </div>
+
+                  <div class="mb-3">
+                      <label for="rh" class="form-label">RH Standard: <span class="text-danger">*</span></label>
+                          <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
+                          title="Enter the guidelines which were followed when performing the RH tests in 'Standard (year)' format."></span>
+                      <select id="rh_standard" name="rh_standard" class="form-select" required data-ndt="rh">
+                          <option value="" selected disabled>Select an option</option>
+                          <option value="ASTM C805 (1982)">ASTM C805 (1982)</option>
+                          <option value="ASTM C805 (1994)">ASTM C805 (1994)</option>
+                          <option value="ASTM C805 (1997)">ASTM C805 (1997)</option>
+                          <option value="ASTM C805 (2002)">ASTM C805 (2002)</option>
+                          <option value="ASTM C805 (2013)">ASTM C805 (2013)</option>
+                          <option value="ASTM C805 (2013)">ASTM C805/C805M (2018)</option>
+                          <option value="BS 4408: Part 4 (1971)">BS 4408: Part 4 (1971)</option>
+                          <option value="BS 1881-202 (1986)">BS 1881-202 (1986)</option>
+                          <option value="EN 12504-2 (2001)">EN 12504-2 (2001)</option>
+                          <option value="EN 12504-2 (2012)">EN 12504-2 (2012)</option>
+                          <option value="EN 12504-2 (2012)">EN 12504-2 (2021)</option>
+                          <option value="IS 13311: Part 2 (1992)">IS 13311: Part 2 (1992)</option>
+                          <option value="other_rh">Other</option>
+                      </select>
+
+                      <!-- Hidden input for custom standard -->
+                      <div id="comb-custom-rh-container" style="display: none; margin-top: 10px;">
+                          <label for="comb-custom-rh" class="form-label">
+                              Enter Custom RH Standard: <span class="text-danger">*</span>
+                          </label>
+                          <input type="text" id="comb-custom-rh" name="custom_rh" class="form-control" placeholder="Please enter the Standard (year)." data-ndt="rh">
+                          <div class="error-message text-danger" style="display:none;"></div>
+                      </div>
+
+                      <div class="error-message" style="color: red; display: none;"></div>
+                  </div>
+
+                  <div class="mb-3">
+                      <label for="rh" class="form-label">Orientation: <span class="text-danger">*</span></label>
+                          <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" title="Enter the hammer orientation applied during the tests."></span>
+                      <select id="orientation" name="orientation" class="form-select" required data-ndt="rh">
+                          <option value="" selected disabled>Select an option</option>
+                          <option value="Horizontal">Horizontal</option>
+                          <option value="Vertical">Vertical</option>
+                      </select>
+                      <div class="error-message" style="color: red; display: none;"></div>
+                  </div>
+
+                  <div class="mb-3">
+                      <label for="rh" class="form-label">Number of RH Tests: <span class="text-danger">*</span></label>
+                          <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" title="Enter the number of rebound hammer tests performed at each test location."></span>
+                      <input type="number" id="no_rh_tests" name="no_rh_tests" class="form-control" required data-ndt="rh">
+                      <div class="error-message" style="color: red; display: none;"></div>
+                  </div>
+              </div>
+            </div>
+          </div>
+      </div>
+  </div>
+
+
+    <!-- Calibration Set (n) -->
+    <div id="calibration-set-container" class="mb-4" style="display:none">
+        <h4 class="text-center mb-3">
+            <strong>Calibration Set (n)
+                <span class="bi bi-question-circle-fill info-icon"
+                    data-bs-toggle="tooltip"
+                    data-bs-placement="top"
+                    title="This table is for calibrating the NDT to the DT results. The DT+NDT pairs must be directly comparable (e.g., taken at the same location), 
+                    and the core dimensions are needed to normalise the geometry to a refernce 300x150 mm cylinder. You can add or clear rows as needed.">
+                </span>
+            </strong></h4>
+        <div class="table-responsive table-scroll">
+            <table class="table table-bordered table-sm text-center">
+            <thead><tr id="calib-headers"></tr></thead>
+            <tbody id="calib-rows"></tbody>
+            </table>
+        </div>
+        <div class="d-flex justify-content-center align-items-center gap-2 mb-2">
+            <button type="button" id="add-calib-row" class="btn btn-outline-secondary">INSERT NEW ROW</button>
+            <button type="button" id="clear-calib" class="btn btn-outline-secondary">CLEAR ALL ROWS</button>
+        </div>
+    </div>
+
+    <!-- Complementary Set (m) -->
+    <div id="complementary-container" class="mb-4" style="display:none">
+        <h4 class="text-center mb-3">
+            <strong>Additional NDTs (m)
+                <span class="bi bi-question-circle-fill info-icon"
+                    data-bs-toggle="tooltip"
+                    data-bs-placement="top"
+                    title="This table is for the complementary set (m) which includes all additional NDTs performed throughout the same test region. You can add or clear rows as needed.">
+                </span>
+            </strong></h4>
+      <div class="table-responsive table-scroll">
+        <table id="calib-table" class="table table-bordered table-sm text-center">
+          <thead><tr id="comp-headers"></tr></thead>
+          <tbody id="comp-rows"></tbody>
+        </table>
+      </div>
+      <div class="d-flex justify-content-center align-items-center gap-2 mb-2">
+        <button type="button" class="btn btn-outline-secondary" id="add-comp-row">INSERT NEW ROW</button>
+        <button type="button" id="clear-comp" class="btn btn-outline-secondary">CLEAR ALL ROWS</button>
+      </div>
+    </div>
+
+    <!-- Analyse -->
+    <div class="text-center">
+      <button id="analyse-btn" type="submit" class="btn btn-predict btn-lg" style="display:none">Analyse</button>
+    </div>
+
+  </form>
+
+
+    <!-- Analysis Results Modal -->
+    <div class="modal fade" id="analysisModal" tabindex="-1" aria-labelledby="analysisModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered"><!-- extra wide -->
+            <div class="modal-content">
+                <div class="modal-header justify-content-center">
+                    <h5 class="modal-title w-100 text-center" id="analysisModalLabel"><strong>Test Region In-situ Characteristics</strong></h5>
+                    <button type="button" class="btn-close position-absolute end-0" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Nav tabs within modal -->
+                    <ul class="nav nav-tabs justify-content-center" id="analysisTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="summary-tab" data-bs-toggle="tab" data-bs-target="#summaryPane" type="button" role="tab">Summary</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="local-tab" data-bs-toggle="tab" data-bs-target="#localPane" type="button" role="tab">Local Calibration</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="global-tab" data-bs-toggle="tab" data-bs-target="#globalPane" type="button" role="tab">Global Calibration</button>
+                    </li>
+                    </ul>
+
+                    <!-- Tab panes -->
+                    <div class="tab-content p-3">
+                        <!-- SUMMARY -->
+                        <div class="tab-pane fade show active" id="summaryPane" role="tabpanel">
+                            <div class="row text-center">
+                                <div class="col-6 border-end pe-4">
+                                    <h5><strong>Local Calibration</strong></h5>
+                                    <p class="small text-muted mb-3"><strong>EN 13791:2019</strong></p>
+                                    <ul id="summary-local" class="list-unstyled"></ul>
+                                </div>
+                            <div class="col-6 ps-4">
+                                <h5><strong>Global Calibration</strong></h5>
+                                <p class="small text-muted mb-3"><strong>Machine Learning</strong></p>
+                                <ul id="summary-global" class="list-unstyled"></ul>
+                            </div>
+                            </div>
+                        </div>
+
+                        <!-- LOCAL CALIBRATION TAB -->
+                        <div class="tab-pane fade" id="localPane" role="tabpanel">
+                            <div class="row">
+                                <!-- Left half: summary -->
+                                <div class="col-6 border-end pe-4">
+                                    <h5 class="text-center"><strong>Local Calibration Results</strong></h5>
+                                    <ul id="local-full-summary" class="list-unstyled"></ul>
+                                </div>
+
+                                <!-- Right half: plots -->
+                                <div class="col-6 ps-4">
+                                    <div class="chart-container mb-4">
+                                        <canvas id="local-plot-1" style="width:100%;"></canvas>
+                                    </div>
+                                    <div class="chart-container mb-4">
+                                        <canvas id="local-plot-2" style="width:100%;"></canvas>
+                                    </div>
+                                    <p id="local-reg-eq" class="mt-2 text-center"></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- GLOBAL CALIBRATION TAB -->
+                        <div class="tab-pane fade" id="globalPane" role="tabpanel">
+                            <div class="row">
+                                <!-- Left half: summary -->
+                                <div class="col-6 border-end pe-4">
+                                    <h5 class="text-center"><strong>Global Calibration Results</strong></h5>
+                                    <ul id="global-full-summary" class="list-unstyled"></ul>
+                                </div>
+
+                                <!-- Right half: plots -->
+                                <div class="col-6 ps-4">
+                                    <div class="chart-container mb-4">
+                                        <canvas id="global-plot-1" style="width:100%;"></canvas>
+                                    </div>
+                                    <div class="chart-container mb-4">
+                                        <canvas id="global-plot-2" style="width:100%;"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+

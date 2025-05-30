@@ -1,0 +1,65 @@
+{# templates/partials/analysis_dt_only.html #}
+
+<div class="container mt-4 text-black">
+  <h1 class="text-center">
+    <strong>Destructive Testing Only</strong>
+    <small class="d-block">EN 13791:2019 Test Region Analysis</small>
+  </h1>
+</div>
+
+<!-- <form id="dtonly-form" onsubmit="event.preventDefault(); if (validateForm()) analyseDTOnly();"> -->
+<form id="dtonly-form" novalidate>
+
+  <!-- DT Results table -->
+  <div id="dt-set-container" class="mb-4" style="display:none">
+    <h4 class="text-center mb-3">
+    <strong>DT Results
+        <span class="bi bi-question-circle-fill info-icon"
+            data-bs-toggle="tooltip"
+            data-bs-placement="top"
+            title="This table is for destructive testing of cores performed by themselves (no NDTs). 
+            The core dimensions are needed to normalise the geometry to a refernce 300x150 mm cylinder. You can add or clear rows as needed.">
+        </span>
+    </strong></h4>
+    <div class="row justify-content-center">
+      <div class="col-12 col-md-8">
+        <div class="table-responsive table-scroll">
+          <table class="table table-bordered table-sm text-center">
+            <thead>
+              <tr id="dt-headers"></tr>
+            </thead>
+            <tbody id="dt-rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="text-center">
+      <button type="button" class="btn btn-outline-secondary" id="add-dt-row">INSERT NEW ROW</button>
+      <button type="button" id="dt-clear-btn" class="btn btn-outline-secondary">CLEAR ALL ROWS</button>
+    </div>
+  </div>
+
+  <div class="text-center">
+    <button type="submit" class="btn btn-predict btn-lg">Analyse</button>
+  </div>
+</form>
+
+<!-- Modal -->
+<div class="modal fade" id="dtonlyModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header justify-content-center">
+        <h5 class="modal-title w-100 text-center" id="dtonlyModalLabel">DT-Only Summary</h5>
+        <button type="button" class="btn-close position-absolute end-0" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <ul id="dt-summary" class="list-unstyled"></ul>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
