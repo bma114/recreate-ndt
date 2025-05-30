@@ -1,55 +1,116 @@
 /* Apply background color */
 body {
-	font-family: Arial, sans-serif;
-	background-color: #662D91 !important; /* Enssures override */
-	margin: 10px;
-	padding: 20px;
-	color: white;
+  background-color: #f7f7f7 !important;
+  margin: 0;
+  padding: 0;
+  font-family: 'Poppins', sans-serif;
 }
 
+#heroBar {
+  background-color: #662D91;
+  border-bottom-left-radius: 1rem;
+  border-bottom-right-radius: 1rem;
+}
+
+/* Space under hero before content */
+.container {
+  padding-top: 2rem;
+}
 
 /* Style the logo banner */
 .logo-banner {
     text-align: center;
-    background-color: #662D91;
     padding: 10px;
 }
-
 .logo-banner img {
-    width: 1315px; /* Adjust as needed */
+    width: 100%; /* Adjust as needed */
     height: auto;
+    max-width: 100%;
     display: block;
     margin: 0 auto;
 }
+#heroBar .logo-banner img { max-width: 1200px; }
 
-/* Style the form container */
-.container {
-    background: white;
-    color: black;
-	padding: 20px;
-    border-radius: 10px;
-    box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.1);
+/* Style the tab-buttons */
+.nav-tabs .nav-link {
+  background-color: #72A64B !important;
+  color: white !important;
+  border: none;
+  border-radius: .5rem .5rem 0 0;
+}
+.nav-tabs .nav-link.active {
+  background-color: #5a8c3b !important;
+  color: #fff !important;
 }
 
-/* small gap between each field */
-.mb-3 {
+/* Alternate h2 alignments in Home tab */
+.home-section {
+  margin-bottom: 3rem; /* spacing between blocks */
+}
+.home-section h2 {
+  margin-top: 5.5rem;    /* extra space above each header */
+}
+.home-container > h1 {
+  font-weight: 600;
+}
+
+.home-section p {
+  text-align: justify;
+  text-align-last: left; /* optional: left-align the last line */
+}
+.home-section h2 {
+  text-align: left;
+}
+
+/* Narrow the Home tabs margins */
+.home-container {
+  padding-left: 1rem;  
+  padding-right: 1rem;
+  max-width: 1500px;      /* optional: limit how wide it grows */
+  margin: 0 auto;        /* center it */
+}
+
+
+/*                             */
+/* INDIVIDUAL PREDICTIONS TAB  */
+/*                             */
+
+#indiv-features-card .section-header {
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+/* tighten the card width if you like: */
+#indiv-features-card {
+  max-width: 1650px;
+  margin: 0 auto 2rem;
+}
+
+/* Small gap between each field */
+#indivTab .mb-3 {
     margin-bottom: 1rem !important;
   }
   
-  /* larger gap between each <h4> section */
-  .feature-group {
+/* larger gap between each <h4> section */
+#indivTab .feature-group {
     margin-bottom: 2rem !important;
   }
 
-.section-header {
-    margin-top: 4rem !important;
+#indivTab .section-header {
+    margin-top: 3.5rem !important;
     margin-bottom: 1rem !important;
   }
 
+.tooltip {
+  display: block !important;     /* in case a reset hid it */
+  opacity: 1 !important;         /* fully visible */
+  visibility: visible !important;
+  z-index: 2000 !important;      /* above your app’s content */
+}
 /* Tooltip styling */
 .info-icon {
     cursor: pointer;
-    color: black;
+    color: lightgrey;
     font-size: 14px;
     margin-left: 5px;
 }
@@ -57,12 +118,6 @@ body {
     text-align: left !important;
 }
 
-form {
-	background: white;
-	padding: 10px;
-	border-radius: 5px;
-	box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.1);
-}
 /* Ensure uniform input field lengths */
 .form-control {
     width: 100%;
@@ -84,3 +139,158 @@ form {
     background-color: #5f9340;
     border-color: #5f9340;
   }
+
+
+/*                       */
+/* COMBINED ANALYSIS TAB */
+/*                       */
+
+/* section headers inside combined tab */
+#combined-features-card .section-header {
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+}
+/* make table headers centered and padded */
+#calibration-set-container th,
+#complementary-container th {
+  vertical-align: middle;
+  text-align: center;
+}
+/* tighten the card width if you like: */
+#combined-features-card {
+  max-width: 1650px;
+  margin: 0 auto 2rem;
+}
+
+/* Calibration table: fill the card, auto-size columns */
+#calibration-set-container .table-responsive table {
+  width: 100%;
+  table-layout: fixed;
+}
+#calibration-set-container th,
+#calibration-set-container td {
+  word-wrap: break-word;
+  white-space: normal;
+}
+
+/* complementary table: fixed layout, auto-width and centered */
+#complementary-container .table-responsive table {
+  table-layout: fixed;
+  width: auto !important;       /* let the table shrink to its content */
+  margin: 0 auto;               /* center it in the card */
+}
+#complementary-container .d-flex {
+  max-width: fit-content;     /* shrink to table width   */
+  margin-inline: auto;        /* then centre inside card */
+}
+
+/* each complementary <th> and <td> is 25% of the card */
+/* #complementary-container th:not(.w-idx):not(.w-del),
+#complementary-container td:not(.w-idx):not(.w-del) {
+  width: auto !important;
+  text-align: center;
+  vertical-align: middle;
+  box-sizing: border-box;
+} */
+
+/* Center the text INSIDE each input */
+#calibration-set-container td input,
+#complementary-container td input {
+  text-align: center;
+}
+
+#complementary-container .d-flex {
+  margin-top: 1rem;   /* both buttons move together */
+}
+
+/* make modal-tabs stand out */
+#analysisModal .nav-tabs .nav-link {
+  color: #444;
+}
+#analysisModal .nav-tabs .nav-link.active {
+  background: #72A64B;
+  color: #fff;
+}
+
+/* add a bit of padding under each summary list */
+#analysisModal .list-unstyled li {
+  margin-bottom: 0.5rem;
+}
+
+.chart-container {
+  position: relative;
+  height: 375px;            /* pick whatever height you like */
+  width: 100%;              /* will fill the right-hand column */
+  margin-bottom: 1.5rem;
+}
+/* ensure Chart ignores its own aspect-ratio lock */
+.chart-container canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* collapse everything in a .tab-pane that isn't .show */
+.modal-body .tab-pane {
+  display: none;
+}
+.modal-body .tab-pane.show {
+  display: block;
+}
+
+/* Left align the summary tab */
+#summaryPane .col-6 ul {
+  text-align: left;
+  padding-left: 1rem;  /* optional indent */
+}
+#summaryPane .col-6 h5 {
+  text-align: center;
+}
+
+.table-danger td { background-color:#f8d7da !important; }
+
+.table-scroll {
+  max-height: 650px;        /* pick the height you like */
+  overflow-y: auto;
+}
+
+/* for row number and delete columns */
+.w-idx { width: 3.2rem !important; padding-right:.25rem !important; }
+.w-del { width: 2.4rem !important; text-align:center !important; }
+
+/* keep the row number & delete columns narrow */
+#complementary-container .w-idx { width: 3.2rem !important; }
+#complementary-container .w-del { width: 2.4rem !important; }
+
+#complementary-container .w-data { width: 25rem !important; }
+
+.delete-row {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: #dc3545;
+  cursor: pointer;
+}
+
+.badge-row-error {
+  background: #dc3545;          /* Bootstrap danger */
+  width: 1rem; height: 1rem;
+  display: inline-block;
+  border-radius: 50%;
+}
+
+
+
+/*                       */
+/*      DT ONLY TAB      */
+/*                       */
+
+/* Center the text inside any input in the DT-Only table */
+#dt-set-container .table input {
+  text-align: center;
+}
+
+/* make the DT-only table a bit tighter */
+#dt-set-container table input {
+  width: 100%;
+  box-sizing: border-box;
+}
