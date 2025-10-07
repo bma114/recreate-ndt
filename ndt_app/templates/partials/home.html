@@ -7,40 +7,6 @@
     Tools using NDTs</strong></h1>
 
   <section class="home-section">
-    <h2><strong>About the Project</strong></h2>
-      <p>
-      The international ReCreate project is a 2020 Horizon Europe-funded programme that explores the complete structural reuse of precast concrete elements in new building constructions. 
-      ReCreate's objective is to assess and improve the technical feasibility of a circular life cycle for structural precast elements, covering the entire value chain - 
-      from disassembly and quality control, demountability, connections, structural and architectural designs for reuse and reconstruction. 
-      </p>
-      <p>
-      The project involves an academic and industry consortium from Sweden, Germany, Finland, Croatia and the Netherlands. 
-      Several pilot deconstruction projects have been completed within each country cluster, including a nine-storey office complex based in Arnhem, the Netherlands. 
-      From this deconstruction project, approximately 350 load-bearing facade wall elements and 450 prestressed hollow-core floor slabs were successfully disassembled with the intention of 
-      complete structural reuse. +
-      This web application is part of the ReCreate project's ongoing investment to assess the properties and quality of materials prior to reconstruction, 
-      reducing uncertainty and maximising the potential for circular design. More information regarding ongoing projects and research can be found at the ReCreate website: 
-      <a href="https://recreate-project.eu/" target="_blank" rel="noopener">https://recreate-project.eu/</a>.
-      </p>
-      <p>
-      Disclaimer: This research has received funding from the European Union's Horizon 2020 research and innovation programme under Grant Agreement No 958200. The content presented herein 
-      reflects the authors' views. The European Commission is not responsible for any use that may be made of the information this publication contains. 
-      </p>
-
-      <figure class="text-center my-4">
-        <img src="{% static 'Work Packages.png' %}"
-            alt="ReCreate project work-package structure"
-            class="img-fluid"
-            style="width: 35%; height: auto;">
-        <figcaption class="mt-2 fst-italic small">
-          Figure&nbsp;1: Scope and work-package structure of the ReCreate project
-        </figcaption>
-      </figure>
-
-  </section>
-
-
-  <section class="home-section">
     <h2><strong>About this App</strong></h2>
       <p>
       This application was developed to provide real-time predictions of the concrete compressive strength based on non-destructive test (NDT) results obtained either in the lab or in the field.
@@ -109,6 +75,11 @@
         and example code for building, training, testing, and optimising the UPV CatBoost-TPE model is on
         <a href="https://github.com/bma114/upv-compressive-strength-predictions" target="_blank" rel="noopener">GitHub</a>.
       </p>
+      <p>
+        A peer-reviewed article in the journal of NDT & E International describing the database development, modelling foundations and results has been published and is open-source at:
+        <a href="https://doi.org/10.1016/j.ndteint.2025.103549" target="_blank" rel="noopener">Advancing non-destructive concrete compressive strength estimation: 
+          Large-Scale datasets and machine learning framework</a> 
+      </p>
 
       <p><strong>Tips for best results</strong>:</p>
       <ul class="text-start mb-0">
@@ -120,14 +91,45 @@
 
   </section>
 
+  <section class="home-section">
+    <h2><strong>About the Project</strong></h2>
+      <p>
+      The international ReCreate project is a 2020 Horizon Europe-funded programme that explores the complete structural reuse of precast concrete elements in new building constructions. 
+      ReCreate's objective is to assess and improve the technical feasibility of a circular life cycle for structural precast elements, covering the entire value chain - 
+      from disassembly and quality control, demountability, connections, structural and architectural designs for reuse and reconstruction. 
+      The project involves an academic and industry consortium across Sweden, Germany, Finland, Croatia and the Netherlands. 
+      </p>
+      <p>    
+      This web application is part of the ReCreate project's ongoing investment to assess the properties and quality of materials prior to reconstruction, 
+      reducing uncertainty and maximising the potential for circular design. More information regarding ongoing projects and research can be found at the ReCreate website: 
+      <a href="https://recreate-project.eu/" target="_blank" rel="noopener">https://recreate-project.eu/</a>.
+      </p>
+      <p>
+      <strong>Disclaimer:</strong> This research has received funding from the European Union's Horizon 2020 research and innovation programme under Grant Agreement No 958200. The content presented herein 
+      reflects the authors' views. The European Commission is not responsible for any use that may be made of the information this publication contains. 
+      </p>
+
+      <figure class="text-center my-4">
+        <img src="{% static 'Work Packages.png' %}"
+            alt="ReCreate project work-package structure"
+            class="img-fluid"
+            style="width: 35%; height: auto;">
+        <figcaption class="mt-2 fst-italic small">
+          Figure&nbsp;1: Scope and work-package structure of the ReCreate project
+        </figcaption>
+      </figure>
+
+  </section>
 
   <section class="home-section">
     <h2><strong>Individual Predictions</strong></h2>
       <p>
       This tab enables users to estimate the compressive strength at a specific location relative to where an NDT was performed. 
+      </p>
+      <p>
       After selecting the NDT technique, fill in all required fields and any optional fields where the information is known. 
       Clicking the green predict button will then generate a prediction of the normalised compressive strength. 
-      If the strength is expected to fall within the domains mentioned in Table 1, then the predictions will have confidence metrics given to Table 1 also.
+      If the strength is expected to fall within the domains mentioned in <strong>Table 1</strong>, then the predictions will have confidence metrics given to Table 1 also.
       </p>
   </section>
 
@@ -175,11 +177,13 @@
         The model predictions, distribution properties, coefficient of variation, and estimated characteristic strength are given for each calibration method.
       </p>
       <p>
-       It's generally accepted that local calibration can provide better results for small datasets, as each NDT contains significant variance on the global scale. 
-       Otherwise, global calibration can provide much more <em>consistent and reliable</em> results for larger datasets that follow the global trend and sit inside the training data ranges given in Table 1. 
-       For this reason, both the local linear and global distributions are plotted along with their full statistical results, so the user can decide which they find more confidence in. 
-       It should again be stressed that the more optional fields that are completed, the better these global models perform. 
-       Further technical details, performance metrics, and limitations are discussed in Matthews et al. (2025 - in review). 
+       It's generally accepted that local calibration can provide good results for small datasets, as the variance within each NDT significantly increases as more data is aggregated. 
+       Otherwise, global calibration can typically provide more <em>consistent</em> and <em>reliable</em> results for larger datasets, given that: they <strong>follow the global trend</strong>
+       and fall <strong>inside the training data ranges</strong> given in Table 1. Hence, global calibration tends to perform poorly for high-strength concretes.
+       To help navigate this, both the local linear and global distributions are plotted along with their full statistical results, so the user can decide which they find more confidence in. 
+       It should again be stressed that the more optional fields that are completed, the better these global models perform. The global models are also much more sensitive to small changes in certain variables,
+       since they were trained on 17 input variables each for UPV and RH, and 22 for SonReb.
+       Further technical details, performance metrics, and limitations are discussed in the journal paper linked above.
       </p>
   </section>
 
