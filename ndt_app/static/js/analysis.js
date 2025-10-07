@@ -638,13 +638,14 @@ document.addEventListener("DOMContentLoaded", function() {
             type: 'scatter',
             data: {
               datasets: [{
-                label: '',
+                label: 'Data',
                 data: xData.map((x,i)=>({x, y: yData[i]})),
-                pointBackgroundColor: '#662D91', 
                 showLine: false,
-                borderColor: 'black',
-                borderWidth: 1,
+                pointBackgroundColor: '#662D91', 
+                borderColor: '#662D91',
+                borderWidth: 0,
                 pointRadius: 4,
+                pointStyle: 'circle',
                 tension: 0
               },
               {
@@ -657,10 +658,12 @@ document.addEventListener("DOMContentLoaded", function() {
                     { x: maxX, y: slope * maxX + intercept }
                   ];
                 })(),
-                borderColor: 'black',
-                borderWidth: 1,
+                borderColor: '#000',
+                borderWidth: 2,
                 fill: false,
-                pointRadius: 0
+                pointRadius: 0,
+                pointStyle: 'line',
+                tension: 0
               }
             ]
           },
@@ -671,7 +674,10 @@ document.addEventListener("DOMContentLoaded", function() {
                 y: { title: { display: true, text: ylabel, font: { size: 14 } } }
               },
               plugins: {
-                legend: { display: false } },
+                legend: { 
+                  display: true,
+                  labels: {usePointStyle: true} 
+                } },
               layout: { padding: { top: 10, bottom: 30 } },
 
               // draw the equation below the x-axis
