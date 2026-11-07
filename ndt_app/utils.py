@@ -2,100 +2,85 @@ import numpy as np
 import pandas as pd
 
 
+#  Normalise raw core strengths to the 150 x 300 mm reference cylinder
 
-# ----------------------------------------------------------
-#                   NORMALIZE RAW FC INPUT
-# ----------------------------------------------------------
-# (diameter_mm, height_mm) : factor_to_multiply_raw_strength
-TABLE_FACTORS = {
-    (150, 300): 1.00,
-    (100, 300): 1.05,
-    (120, 320): 1.00 / 0.95,
-    (100, 200): 0.92 / 0.95,
-    (100, 100): 0.98 / 1.06,
-    (100, 150): 0.96,
-    (75, 150): 1.00 / 1.06,
-    (75, 100): 0.91,
-    (75,  75): 0.85,
-    (50,  75): 0.91,
-    (50,  50): 0.80,
+_F100 = {1.0: 0.96 / 1.10, 2.0: 0.92 / 0.95, 3.0: 1.05}
+_R1 = _F100[1.0] / _F100[2.0]          # 1:1 / 2:1 ratio of the 100 mm class
+_R3 = _F100[3.0] / _F100[2.0]          # 3:1 / 2:1 ratio of the 100 mm class
+
+ANCHORS = {
+    50:  dict(_F100),
+    75:  {1.0: 0.98 / 1.06, 2.0: 1.00 / 1.06, 3.0: (1.00 / 1.06) * _R3},
+    100: dict(_F100),
+    150: {1.0: 1.00 * _R1, 2.0: 1.00, 3.0: 1.00 / 0.95},
 }
 
-TABLE_TOLERANCE = 5  # [mm] round-off 
+# Nominal diameter classes (upper bounds, mm)
+_CLASS_EDGES = [(62.5, 50), (87.5, 75), (125.0, 100), (np.inf, 150)]
 
-# --------------------------------------------------------
-#    CONTINUOUS INTERPOLATION 
-# --------------------------------------------------------
-
-# (a) aspect-ratio (L/D) factor – ASTM C42 values, linearly interpolated
-_LD_POINTS  = np.array([1.00, 1.25, 1.50, 1.75, 2.00])
-_LD_FACTORS = np.array([0.87, 0.93, 0.96, 0.98, 1.00])
-
-def length_factor(L_over_D: np.ndarray) -> np.ndarray:
-    """
-    Bartlett & MacGregor (ASTM C42) length correction, linear-interp.
-    Values above L/D = 2.0 are taken as 1.00 (no correction).
-    """
-    return np.interp(L_over_D, _LD_POINTS, _LD_FACTORS, left=_LD_FACTORS[0], right=1.00)
+# Range of geometries covered by the databases and Reineck
+D_EVIDENCED = (44.0, 160.0)     # mm
+LD_MIN_EXTRAP = 0.5             # below this H/D the factor is held constant
+LD_MAX = 3.0                    # above this H/D the factor is held constant
 
 
-# (b) diameter factor – Bartlett & MacGregor size effect (in 'multiplicative' form)
-_D_POINTS  = np.array([50,  75, 100, 150])  # mm
-_D_FACTORS = np.array([0.92, 0.97, 1.00, 1.00])
-
-def diameter_factor(D: np.ndarray) -> np.ndarray:
-    """
-    Size effect for drilled cores relative to a 150 mm cylinder.
-    Linear-interp.  Diameters >150 mm are capped at 1.00 (no size effect).
-    """
-    return np.interp(D, _D_POINTS, _D_FACTORS, left=_D_FACTORS[0], right=1.00)
+def diameter_class(D):
+    for upper, cls in _CLASS_EDGES:
+        if D < upper:
+            return cls
+    return 150
 
 
-# -------------------------------------------------------
-#    PUBLIC FUNCTION
-# -------------------------------------------------------
-def normalise_to_150x300(
-    diam_mm: np.ndarray | list,
-    height_mm: np.ndarray | list,
-    fc_raw_mpa: np.ndarray | list,
-    use_table_first: bool = True,
-) -> pd.DataFrame:
-    # Normalise user-supplied compressive strengths to the 150×300 mm reference.
-    d   = np.asarray(diam_mm,   dtype=float)
-    h   = np.asarray(height_mm, dtype=float)
+def conversion_factor(D, H):
+    """Return (factor, nominal class, H/D, note) for one core."""
+    cls = diameter_class(D)
+    a = ANCHORS[cls]
+    ld = H / D
+    notes = []
+
+    if ld < 1.0:
+        # Shorter cores test stronger: extend the 1:1 to 2:1 slope (conservative)
+        ld_use = max(ld, LD_MIN_EXTRAP)
+        slope = a[2.0] - a[1.0]
+        f = a[1.0] - slope * (1.0 - ld_use)
+        notes.append("H/D below 1, factor extrapolated" if ld >= LD_MIN_EXTRAP
+                     else f"H/D below {LD_MIN_EXTRAP}, factor held at H/D = {LD_MIN_EXTRAP}")
+    elif ld <= 2.0:
+        f = a[1.0] + (a[2.0] - a[1.0]) * (ld - 1.0)
+    elif ld <= LD_MAX:
+        f = a[2.0] + (a[3.0] - a[2.0]) * (ld - 2.0)
+    else:
+        f = a[3.0]
+        notes.append(f"H/D above {LD_MAX:.0f}, factor held at H/D = {LD_MAX:.0f}")
+
+    if not (D_EVIDENCED[0] <= D <= D_EVIDENCED[1]):
+        notes.append(f"diameter outside the {D_EVIDENCED[0]:.0f}–{D_EVIDENCED[1]:.0f} mm range of the conversion factors, "
+                     f"factors for the nearest core size ({cls} mm) used")
+
+    return float(f), cls, float(ld), "; ".join(notes)
+
+
+def normalise_to_150x300(diam_mm, height_mm, fc_raw_mpa) -> pd.DataFrame:
+    """Normalise core strengths to the 150 x 300 mm reference cylinder."""
+    d = np.asarray(diam_mm, dtype=float)
+    h = np.asarray(height_mm, dtype=float)
     fc0 = np.asarray(fc_raw_mpa, dtype=float)
 
     if not (d.size == h.size == fc0.size):
         raise ValueError("diameter, height and fc arrays must be the same length")
+    if np.any(d <= 0) or np.any(h <= 0) or np.any(fc0 <= 0):
+        raise ValueError("core diameter, height and strength must all be positive")
 
-    factors = np.empty_like(fc0, dtype=float)
+    rows = [conversion_factor(D, H) for D, H in zip(d, h)]
+    factors = np.array([r[0] for r in rows])
 
-    for i, (D, H) in enumerate(zip(d, h)):
-        found_factor = None
-
-        if use_table_first:
-            # Look for a match in the hard-wired table within the tolerance
-            for (Dt, Ht), Ft in TABLE_FACTORS.items():
-                if abs(D - Dt) <= TABLE_TOLERANCE and abs(H - Ht) <= TABLE_TOLERANCE:
-                    found_factor = Ft
-                    break
-
-        if found_factor is None:
-            # ----  Continuous model  ----
-            fld = length_factor(H / D)
-            fD  = diameter_factor(D)
-            found_factor = fld * fD
-
-        factors[i] = found_factor
-
-    fc_norm = factors * fc0
-
-    return pd.DataFrame(
-        {
-            "diameter_mm": d,
-            "height_mm":   h,
-            "fc_raw_MPa":  fc0,
-            "factor_applied": factors,
-            "fc_normalised_MPa": fc_norm,
-        }
-    )
+    return pd.DataFrame({
+        "diameter_mm": d,
+        "height_mm": h,
+        "fc_raw_MPa": fc0,
+        "diameter_class_mm": [r[1] for r in rows],
+        "H_over_D": [r[2] for r in rows],
+        "factor_applied": factors,
+        "fc_normalised_MPa": factors * fc0,
+        "note": [r[3] for r in rows],
+    })

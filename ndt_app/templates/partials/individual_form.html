@@ -1,335 +1,275 @@
 {# templates/partials/individual_form.html #}
+<div class="page indiv">
 
-<div class="container mt-4 text-black">
-    <h1 class="text-center"><strong>NDT-Compressive Strength Estimator</strong></h1>
-    <p class="text-center"><strong>Please select an NDT method and enter the required information to generate a prediction</strong></p>
+  <header class="page-head">
+    <p class="eyebrow">Individual prediction</p>
+    <h1>Estimate strength from a single NDT result</h1>
+    <p class="lede">Choose a test method and enter the test details. The result is the mean prediction of ten CatBoost models,
+      expressed as the strength of a 150&nbsp;&times;&nbsp;300&nbsp;mm cylinder.</p>
+  </header>
+
+  <form id="indiv-form" novalidate>
+
+    <div id="indiv-error-summary" class="error-summary" role="alert" tabindex="-1" hidden>
+      <h2><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> <span></span></h2>
+      <ul></ul>
+    </div>
+
+    <section class="form-card" aria-labelledby="method-title">
+      <div class="form-card-head">
+        <span class="form-card-icon"><i class="bi bi-ui-radios-grid" aria-hidden="true"></i></span>
+        <div><h2 id="method-title">Test method</h2></div>
+      </div>
+      <div class="method-grid" role="radiogroup" aria-labelledby="method-title" aria-describedby="ndt-error">
+        <label class="method-option">
+          <input type="radio" name="ndt" value="upv" class="visually-hidden" required>
+          <span class="method-body"><i class="bi bi-soundwave" aria-hidden="true"></i><strong>UPV</strong><small>Ultrasonic pulse velocity</small></span>
+        </label>
+        <label class="method-option">
+          <input type="radio" name="ndt" value="rh" class="visually-hidden" required>
+          <span class="method-body"><i class="bi bi-hammer" aria-hidden="true"></i><strong>Rebound hammer</strong><small>Surface hardness, rebound number</small></span>
+        </label>
+        <label class="method-option">
+          <input type="radio" name="ndt" value="sonreb" class="visually-hidden" required>
+          <span class="method-body"><i class="bi bi-intersect" aria-hidden="true"></i><strong>SonReb</strong><small>UPV and rebound hammer combined</small></span>
+        </label>
+      </div>
+      <div class="invalid-feedback d-block" id="ndt-error" hidden></div>
+    </section>
+
+    <div id="indiv-fields" hidden>
+      <p class="req-legend"><span class="req">*</span> Required. Optional fields improve the prediction when known.</p>
+
+    <section class="form-card " id="indiv-general-block" aria-labelledby="indiv-general-block-title">
+      <div class="form-card-head">
+        <span class="form-card-icon"><i class="bi bi-geo-alt" aria-hidden="true"></i></span>
+        <div><h2 id="indiv-general-block-title">Specimen and conditions</h2><p>Where and on what the test was carried out.</p></div>
+      </div>
+      <div class="form-grid">
+<div class="field ">
+  <label for="country" class="form-label">Country <span class="req" aria-hidden="true">*</span></label>
+  <input class="form-control" type="text" id="country" name="country" aria-describedby="country-help country-error" required list="country-list" maxlength="60" data-label="country" data-pattern="^[A-Za-z][A-Za-z .,&#x27;()\-]*$" data-known="country-list" autocomplete="off" spellcheck="false"><div class="invalid-feedback" id="country-error"></div>
+  <div class="form-text" id="country-help">Where the concrete was produced. Pick from the list to match the training data.</div>
+  <div class="field-note" hidden></div>
+</div>
+<div class="field ">
+  <label for="specimen_type" class="form-label">Specimen tested <span class="req" aria-hidden="true">*</span></label>
+  <select class="form-select" id="specimen_type" name="specimen_type" aria-describedby="specimen_type-help specimen_type-error" required data-label="specimen tested"><option value="" selected disabled>Select&hellip;</option><optgroup label="Cylinder"><option value="Cylinder - Laboratory">Cylinder, cast in the laboratory</option><option value="Cylinder - On-site">Cylinder, cast on site</option><option value="Cylinder - In-situ">Cylinder or core, drilled in-situ</option><option value="Cylinder - In-situ">Cylinder, drilled in the laboratory</option></optgroup><optgroup label="Cube"><option value="Cube - Laboratory">Cube, cast in the laboratory</option><option value="Cube - On-site">Cube, cast on site</option></optgroup><optgroup label="Structural element"><option value="Element - Laboratory">Element, in the laboratory</option><option value="Element - In-situ">Element, in-situ (existing structure)</option></optgroup></select><div class="invalid-feedback" id="specimen_type-error"></div>
+  <div class="form-text" id="specimen_type-help">The specimen or element on which the NDT was performed.</div>
+  <div class="field-note" hidden></div>
+</div>
+<div class="field ">
+  <label for="specimen_age" class="form-label">Concrete age <span class="req" aria-hidden="true">*</span></label>
+  <div class="input-group has-validation"><input class="form-control" type="text" id="specimen_age" name="specimen_age" aria-describedby="specimen_age-help specimen_age-error" required inputmode="numeric" data-integer data-label="concrete age" data-soft-max="20000" data-min="1" data-max="36500" data-type="number" maxlength="20" autocomplete="off" spellcheck="false"><span class="input-group-text">days</span><div class="invalid-feedback" id="specimen_age-error"></div></div>
+  <div class="form-text" id="specimen_age-help">If unknown, e.g. for an existing structure, estimate it from the construction date.</div>
+  <div class="field-note" hidden></div>
+</div>
+<div class="field ">
+  <label for="rebar_present" class="form-label">Reinforcement in the test path <span class="req" aria-hidden="true">*</span></label>
+  <select class="form-select" id="rebar_present" name="rebar_present" aria-describedby="rebar_present-help rebar_present-error" required data-label="reinforcement" data-required-msg="Select whether reinforcement was in the test path."><option value="" selected disabled>Select&hellip;</option><option value="FALSE">No</option><option value="TRUE">Yes</option></select><div class="invalid-feedback" id="rebar_present-error"></div>
+  <div class="form-text" id="rebar_present-help">Select Yes if a bar lay directly in the measurement path.</div>
+  <div class="field-note" hidden></div>
+</div>
+      </div>
+    </section>
+
+    <section class="form-card ndt-block" id="indiv-upv-block" aria-labelledby="indiv-upv-block-title">
+      <div class="form-card-head">
+        <span class="form-card-icon"><i class="bi bi-soundwave" aria-hidden="true"></i></span>
+        <div><h2 id="indiv-upv-block-title">Ultrasonic pulse velocity</h2><p>The UPV measurement and how it was made.</p></div>
+      </div>
+      <div class="form-grid">
+<div class="field ">
+  <label for="velocity" class="form-label">Pulse velocity, V<sub>p</sub> <span class="req" aria-hidden="true">*</span></label>
+  <div class="input-group has-validation"><input class="form-control" type="text" id="velocity" name="velocity" aria-describedby="velocity-help velocity-error" required data-ndt="upv" data-label="pulse velocity" data-soft-min="2300" data-soft-max="5250" data-unit="m/s" data-min="1000" data-max="7000" data-type="number" inputmode="decimal" maxlength="20" autocomplete="off" spellcheck="false"><span class="input-group-text">m/s</span><div class="invalid-feedback" id="velocity-error"></div></div>
+  <div class="form-text" id="velocity-help">Mean longitudinal pulse velocity at the test location.</div>
+  <div class="field-note" hidden></div>
+</div>
+<div class="field ">
+  <label for="no_upv_tests" class="form-label">Number of UPV readings <span class="req" aria-hidden="true">*</span></label>
+  <input class="form-control" type="text" id="no_upv_tests" name="no_upv_tests" aria-describedby="no_upv_tests-help no_upv_tests-error" required inputmode="numeric" data-integer data-ndt="upv" data-label="number of UPV readings" data-min="1" data-max="100" data-type="number" maxlength="20" autocomplete="off" spellcheck="false"><div class="invalid-feedback" id="no_upv_tests-error"></div>
+  <div class="form-text" id="no_upv_tests-help">Readings averaged to give V<sub>p</sub> at this location.</div>
+  <div class="field-note" hidden></div>
+</div>
+<div class="field ">
+  <label for="test_type" class="form-label">Transmission method <span class="req" aria-hidden="true">*</span></label>
+  <select class="form-select" id="test_type" name="test_type" aria-describedby="test_type-help test_type-error" required data-ndt="upv" data-label="transmission method"><option value="" selected disabled>Select&hellip;</option><option value="Direct">Direct</option><option value="Semi-direct">Semi-direct</option><option value="Indirect">Indirect</option></select><div class="invalid-feedback" id="test_type-error"></div>
+  <div class="form-text" id="test_type-help">Direct (opposite faces), semi-direct (adjacent faces) or indirect (same face).</div>
+  <div class="field-note" hidden></div>
+</div>
+<div class="field ">
+  <label for="upv_standard" class="form-label">Test standard <span class="req" aria-hidden="true">*</span></label>
+  <select class="form-select" id="upv_standard" name="upv_standard" aria-describedby="upv_standard-help upv_standard-error" required data-ndt="upv" data-label="UPV test standard"><option value="" selected disabled>Select&hellip;</option><optgroup label="ASTM"><option value="ASTM C597 (1983)">ASTM C597 (1983)</option><option value="ASTM C597 (1989)">ASTM C597 (1989)</option><option value="ASTM C597 (1994)">ASTM C597 (1994)</option><option value="ASTM C597 (2002)">ASTM C597 (2002)</option><option value="ASTM C597 (2009)">ASTM C597 (2009)</option><option value="ASTM C597 (2016)">ASTM C597 (2016)</option><option value="ASTM C597 (2022)">ASTM C597 (2022)</option></optgroup><optgroup label="British Standards"><option value="BS 4408: Part 5 (1974)">BS 4408: Part 5 (1974)</option><option value="BS 1881-203 (1986)">BS 1881-203 (1986)</option></optgroup><optgroup label="European Standards"><option value="EN 12504-4 (2004)">EN 12504-4 (2004)</option><option value="EN 12504-4 (2004)">EN 12504-4 (2019)</option><option value="EN 12504-4 (2004)">EN 12504-4 (2021)</option></optgroup><optgroup label="Other national standards"><option value="IS 13311: Part 1 (1992)">IS 13311: Part 1 (1992)</option><option value="UNE 83-308 (1986)">UNE 83-308 (1986)</option><option value="NBR 8802 (2013)">NBR 8802 (2013)</option></optgroup><option value="other_upv">Other (type it in)</option></select><div class="invalid-feedback" id="upv_standard-error"></div>
+  <div class="form-text" id="upv_standard-help">The standard followed for the UPV test.</div>
+  <div class="field-note" hidden></div><div class="other-box" id="custom-upv-container" hidden><label for="custom-upv" class="form-label mt-2">UPV standard <span class="req" aria-hidden="true">*</span></label><input type="text" class="form-control" id="custom-upv" name="custom_upv" data-ndt="upv" data-label="name of the UPV standard" placeholder="Standard (year), e.g. ACI 228.1R (2019)" maxlength="60" autocomplete="off" aria-describedby="custom-upv-error"><div class="invalid-feedback" id="custom-upv-error"></div></div>
+</div>
+<div class="field ">
+  <label for="upv_device_brand" class="form-label">Device brand and model <span class="req" aria-hidden="true">*</span></label>
+  <input class="form-control" type="text" id="upv_device_brand" name="upv_device_brand" aria-describedby="upv_device_brand-help upv_device_brand-error" required list="upv-device-list" maxlength="60" data-ndt="upv" data-label="UPV device brand and model" data-known="upv-device-list" autocomplete="off" spellcheck="false"><div class="invalid-feedback" id="upv_device_brand-error"></div>
+  <div class="form-text" id="upv_device_brand-help">Brand, then model. Pick from the list where possible, e.g. PROCEQ PUNDIT PL200.</div>
+  <div class="field-note" hidden></div>
+</div>
+<div class="field ">
+  <label for="upv_transd_freq" class="form-label">Transducer frequency <span class="opt">optional</span></label>
+  <div class="input-group has-validation"><input class="form-control" type="text" id="upv_transd_freq" name="upv_transd_freq" aria-describedby="upv_transd_freq-help upv_transd_freq-error" data-ndt="upv" data-label="transducer frequency" data-soft-min="40" data-soft-max="200" data-unit="kHz" data-min="10" data-max="500" data-type="number" inputmode="decimal" maxlength="20" autocomplete="off" spellcheck="false"><span class="input-group-text">kHz</span><div class="invalid-feedback" id="upv_transd_freq-error"></div></div>
+  <div class="form-text" id="upv_transd_freq-help">Usually 50&ndash;54 kHz for concrete.</div>
+  <div class="field-note" hidden></div>
+</div>
+<div class="field ">
+  <label for="upv_transd_diam" class="form-label">Transducer diameter <span class="opt">optional</span></label>
+  <div class="input-group has-validation"><input class="form-control" type="text" id="upv_transd_diam" name="upv_transd_diam" aria-describedby="upv_transd_diam-error" data-ndt="upv" data-label="transducer diameter" data-soft-min="28" data-soft-max="50" data-unit="mm" data-min="10" data-max="100" data-type="number" inputmode="decimal" maxlength="20" autocomplete="off" spellcheck="false"><span class="input-group-text">mm</span><div class="invalid-feedback" id="upv_transd_diam-error"></div></div>
+  
+  <div class="field-note" hidden></div>
+</div>
+      </div>
+    </section>
+
+    <section class="form-card ndt-block" id="indiv-rh-block" aria-labelledby="indiv-rh-block-title">
+      <div class="form-card-head">
+        <span class="form-card-icon"><i class="bi bi-hammer" aria-hidden="true"></i></span>
+        <div><h2 id="indiv-rh-block-title">Rebound hammer</h2><p>The rebound measurement and how it was made.</p></div>
+      </div>
+      <div class="form-grid">
+<div class="field ">
+  <label for="rebound_number" class="form-label">Rebound number, RN <span class="req" aria-hidden="true">*</span></label>
+  <input class="form-control" type="text" id="rebound_number" name="rebound_number" aria-describedby="rebound_number-help rebound_number-error" required data-ndt="rh" data-label="rebound number" data-soft-min="15" data-soft-max="65" data-min="10" data-max="100" data-type="number" inputmode="decimal" maxlength="20" autocomplete="off" spellcheck="false"><div class="invalid-feedback" id="rebound_number-error"></div>
+  <div class="form-text" id="rebound_number-help">Median rebound number at the test location.</div>
+  <div class="field-note" hidden></div>
+</div>
+<div class="field ">
+  <label for="no_rh_tests" class="form-label">Number of impacts <span class="req" aria-hidden="true">*</span></label>
+  <input class="form-control" type="text" id="no_rh_tests" name="no_rh_tests" aria-describedby="no_rh_tests-help no_rh_tests-error" required inputmode="numeric" data-integer data-ndt="rh" data-label="number of impacts" data-min="1" data-max="200" data-type="number" maxlength="20" autocomplete="off" spellcheck="false"><div class="invalid-feedback" id="no_rh_tests-error"></div>
+  <div class="form-text" id="no_rh_tests-help">Impacts used for the median, typically 9 to 12.</div>
+  <div class="field-note" hidden></div>
+</div>
+<div class="field ">
+  <label for="orientation" class="form-label">Hammer orientation <span class="req" aria-hidden="true">*</span></label>
+  <select class="form-select" id="orientation" name="orientation" aria-describedby="orientation-error" required data-ndt="rh" data-label="hammer orientation"><option value="" selected disabled>Select&hellip;</option><option value="Horizontal">Horizontal</option><option value="Vertical">Vertical</option></select><div class="invalid-feedback" id="orientation-error"></div>
+  
+  <div class="field-note" hidden></div>
+</div>
+<div class="field ">
+  <label for="rh_standard" class="form-label">Test standard <span class="req" aria-hidden="true">*</span></label>
+  <select class="form-select" id="rh_standard" name="rh_standard" aria-describedby="rh_standard-help rh_standard-error" required data-ndt="rh" data-label="rebound hammer test standard"><option value="" selected disabled>Select&hellip;</option><optgroup label="ASTM"><option value="ASTM C805 (1982)">ASTM C805 (1982)</option><option value="ASTM C805 (1994)">ASTM C805 (1994)</option><option value="ASTM C805 (1997)">ASTM C805 (1997)</option><option value="ASTM C805 (2002)">ASTM C805 (2002)</option><option value="ASTM C805 (2013)">ASTM C805 (2013)</option><option value="ASTM C805 (2013)">ASTM C805/C805M (2018)</option></optgroup><optgroup label="British Standards"><option value="BS 4408: Part 4 (1971)">BS 4408: Part 4 (1971)</option><option value="BS 1881-202 (1986)">BS 1881-202 (1986)</option></optgroup><optgroup label="European Standards"><option value="EN 12504-2 (2001)">EN 12504-2 (2001)</option><option value="EN 12504-2 (2012)">EN 12504-2 (2012)</option><option value="EN 12504-2 (2012)">EN 12504-2 (2021)</option></optgroup><optgroup label="Other national standards"><option value="IS 13311: Part 2 (1992)">IS 13311: Part 2 (1992)</option></optgroup><option value="other_rh">Other (type it in)</option></select><div class="invalid-feedback" id="rh_standard-error"></div>
+  <div class="form-text" id="rh_standard-help">The standard followed for the rebound hammer test.</div>
+  <div class="field-note" hidden></div><div class="other-box" id="custom-rh-container" hidden><label for="custom-rh" class="form-label mt-2">RH standard <span class="req" aria-hidden="true">*</span></label><input type="text" class="form-control" id="custom-rh" name="custom_rh" data-ndt="rh" data-label="name of the RH standard" placeholder="Standard (year), e.g. ACI 228.1R (2019)" maxlength="60" autocomplete="off" aria-describedby="custom-rh-error"><div class="invalid-feedback" id="custom-rh-error"></div></div>
+</div>
+<div class="field span-2">
+  <label for="rh_device_brand" class="form-label">Device brand and model <span class="req" aria-hidden="true">*</span></label>
+  <input class="form-control" type="text" id="rh_device_brand" name="rh_device_brand" aria-describedby="rh_device_brand-help rh_device_brand-error" required list="rh-device-list" maxlength="60" data-ndt="rh" data-label="rebound hammer brand and model" data-known="rh-device-list" autocomplete="off" spellcheck="false"><div class="invalid-feedback" id="rh_device_brand-error"></div>
+  <div class="form-text" id="rh_device_brand-help">Include the hammer type, e.g. Original Schmidt Type N.</div>
+  <div class="field-note" hidden></div>
+</div>
+      </div>
+    </section>
+
+    <section class="form-card optional" id="indiv-optional-block" aria-labelledby="indiv-optional-block-title">
+      <div class="form-card-head">
+        <span class="form-card-icon"><i class="bi bi-sliders" aria-hidden="true"></i></span>
+        <div><h2 id="indiv-optional-block-title">Concrete and compression specimen</h2><p>All optional. Fill in whatever is known about the mix and any matching compression specimen.</p></div>
+      </div>
+      <div class="form-grid">
+<div class="field ">
+  <label for="design_strength" class="form-label">Design 28-day strength <span class="opt">optional</span></label>
+  <div class="input-group has-validation"><input class="form-control" type="text" id="design_strength" name="design_strength" aria-describedby="design_strength-help design_strength-error" data-label="design strength" data-soft-min="12" data-soft-max="100" data-unit="MPa" data-min="5" data-max="150" data-type="number" inputmode="decimal" maxlength="20" autocomplete="off" spellcheck="false"><span class="input-group-text">MPa</span><div class="invalid-feedback" id="design_strength-error"></div></div>
+  <div class="form-text" id="design_strength-help">Target or specified strength of the mix.</div>
+  <div class="field-note" hidden></div>
+</div>
+<div class="field ">
+  <label for="max_agg" class="form-label">Maximum aggregate size <span class="opt">optional</span></label>
+  <div class="input-group has-validation"><input class="form-control" type="text" id="max_agg" name="max_agg" aria-describedby="max_agg-error" data-label="maximum aggregate size" data-soft-min="5" data-soft-max="32" data-unit="mm" data-min="2" data-max="100" data-type="number" inputmode="decimal" maxlength="20" autocomplete="off" spellcheck="false"><span class="input-group-text">mm</span><div class="invalid-feedback" id="max_agg-error"></div></div>
+  
+  <div class="field-note" hidden></div>
+</div>
+<div class="field ">
+  <label for="wc_ratio" class="form-label">Water/cement ratio <span class="opt">optional</span></label>
+  <input class="form-control" type="text" id="wc_ratio" name="wc_ratio" aria-describedby="wc_ratio-error" data-label="water/cement ratio" data-soft-min="0.23" data-soft-max="0.8" placeholder="e.g. 0.45" data-min="0.15" data-max="1.5" data-type="number" inputmode="decimal" maxlength="20" autocomplete="off" spellcheck="false"><div class="invalid-feedback" id="wc_ratio-error"></div>
+  
+  <div class="field-note" hidden></div>
+</div>
+<div class="field ">
+  <label for="concrete_specimen" class="form-label">Compression specimen <span class="opt">optional</span></label>
+  <select class="form-select" id="concrete_specimen" name="concrete_specimen" aria-describedby="concrete_specimen-help concrete_specimen-error" data-label="compression specimen"><option value="" selected disabled>Select&hellip;</option><option value="Cylinder">Cylinder</option><option value="Cube">Cube</option><option value="Core">Core</option></select><div class="invalid-feedback" id="concrete_specimen-error"></div>
+  <div class="form-text" id="concrete_specimen-help">Shape of a matching compression specimen, if one exists.</div>
+  <div class="field-note" hidden></div>
+</div>
+<div class="field ">
+  <label for="height" class="form-label">Specimen height <span class="opt">optional</span></label>
+  <div class="input-group has-validation"><input class="form-control" type="text" id="height" name="height" aria-describedby="height-error" data-label="specimen height" data-soft-min="65" data-soft-max="320" data-unit="mm" data-min="20" data-max="1000" data-type="number" inputmode="decimal" maxlength="20" autocomplete="off" spellcheck="false"><span class="input-group-text">mm</span><div class="invalid-feedback" id="height-error"></div></div>
+  
+  <div class="field-note" hidden></div>
+</div>
+<div class="field ">
+  <label for="width_diameter" class="form-label">Specimen width or diameter <span class="opt">optional</span></label>
+  <div class="input-group has-validation"><input class="form-control" type="text" id="width_diameter" name="width_diameter" aria-describedby="width_diameter-help width_diameter-error" data-label="specimen width or diameter" data-soft-min="44" data-soft-max="200" data-unit="mm" data-min="20" data-max="500" data-type="number" inputmode="decimal" maxlength="20" autocomplete="off" spellcheck="false"><span class="input-group-text">mm</span><div class="invalid-feedback" id="width_diameter-error"></div></div>
+  <div class="form-text" id="width_diameter-help">Width for cubes, diameter for cylinders and cores.</div>
+  <div class="field-note" hidden></div>
+</div>
+      </div>
+    </section>
+
+      <div id="indiv-server-error" class="alert alert-danger" role="alert" hidden></div>
+
+      <div class="form-actions">
+        <button id="predict-btn" type="submit" class="btn btn-primary-app btn-lg">
+          <span class="spinner-border spinner-border-sm me-2" aria-hidden="true" hidden></span>
+          <span class="btn-label">Predict strength</span>
+        </button>
+        <button id="indiv-reset" type="button" class="btn btn-link-muted">Clear form</button>
+      </div>
+    </div>
+  </form>
 </div>
 
-<!-- <form id="indiv-form" onsubmit="event.preventDefault(); if (validateIndividual()) showPredictModal();"> -->
-<form id="indiv-form" novalidate>
 
-<!-- NDT Selection -->
-    <div class="text-center mb-4">
-        <label for="ndt" class="form-label h5">Select an NDT Method:</label>
-        <select id="ndt" name="ndt" class="form-select w-50 mx-auto" required>
-            <option value="" disabled selected>Select an option</option>
-            <option value="upv">Ultrasonic Pulse Velocity (UPV)</option>
-            <option value="rh">Rebound Hammer (RH)</option>
-            <option value="sonreb">SonReb (UPV + RH)</option>
-        </select>
-        <div class="error-message text-danger" style="display:none"></div>
-    </div>
-
-<!-- Feature Card -->
-    <div id="indiv-features-card" class="card mb-4 shadow-sm" style="display:none">
-        <div class="card-body">
-            <div class="row gx-4">
-                <!-- Left column -->
-                <div class="col-md-6">
-                    <h4 class="section-header"><strong>Metadata</strong></h4>
-                    <div class="mb-3">
-                        <label for="country" class="form-label">Country: <span class="text-danger">*</span></label>
-                        <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip"
-                            title="Enter the country where the concrete was produced."></span>
-                        <input type="text" id="country" name="country" class="form-control" required>
-                        <div class="error-message text-danger" style="display:none"></div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="specimen_type" class="form-label">NDT Specimen Type: <span class="text-danger">*</span></label>
-                            <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
-                            title="Select the type of specimen on which the NDTs were performed."></span>
-                        <select id="specimen_type" name="specimen_type" class="form-select" required>
-                            <option value="" selected disabled>Select an option</option>
-                            <option value="Cylinder - Laboratory">Cylinder - Laboratory Cast</option>
-                            <option value="Cylinder - In-situ">Cylinder - Laboratory Drilled</option>
-                            <option value="Cylinder - In-situ">Cylinder - Drilled In-situ</option>
-                            <option value="Cylinder - On-site">Cylinder - Cast On-site</option>
-                            <option value="Cube - Laboratory">Cube - Laboratory Cast</option>
-                            <option value="Cube - On-site">Cube - Cast On-site</option>
-                            <option value="Element - Laboratory">Element - Laboratory</option>
-                            <option value="Element - In-situ">Element - In-situ</option>
-                        </select>
-                        <div class="error-message" style="color: red; display: none;"></div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="specimen_age" class="form-label">Specimen Age (days): <span class="text-danger">*</span></label>
-                            <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" data-bs-html="true" 
-                            title="Enter the age of the concrete specimen. If the age is unknown, e.g. for an existing structure, enter an estimation of the construction period in days."></span>
-                        <input type="number" id="specimen_age" name="specimen_age" class="form-control" required>
-                        <div class="error-message" style="color: red; display: none;"></div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="rebar_present" class="form-label">Was Rebar Present? <span class="text-danger">*</span></label>
-                            <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
-                            title="If the NDT was performed at a location with embedded rebar in the direct path, select True."></span>
-                        <select id="rebar_present" name="rebar_present" class="form-select" required>
-                            <option value="" selected disabled>Select an option</option>
-                            <option value="TRUE">True</option>
-                            <option value="FALSE">False</option>
-                        </select>
-                        <div class="error-message" style="color: red; display: none;"></div>
-                    </div>
-
-                    <!-- Concrete specimen features --> 
-                    <div class="col-md-10 feature-group">
-                        <h4 class="section-header"><strong>Concrete Details</strong></h4>
-                        <div class="mb-3">
-                            <label for="max_agg" class="form-label">Max Aggregate Size (mm): (optional)</label>
-                                <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
-                                title="If known, enter the maximum aggregate size used in the concrete mixture in millimeters."></span>
-                            <input type="number" id="max_agg" name="max_agg" class="form-control" step="any">
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="wc_ratio" class="form-label">W/C Ratio: (optional)</label>
-                                <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
-                                title="If known, enter the water/cement ratio of the concrete mixture."></span>
-                            <input type="number" id="wc_ratio" name="wc_ratio" class="form-control" step="any">
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="design_strength" class="form-label">Target 28-Day Strength (MPa): (optional) </label>
-                                <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
-                                title="If known, enter the original target 28-day strength for the concrete mixture, in megapascals."></span>
-                            <input type="number" id="design_strength" name="design_strength" class="form-control" step="any">
-                        </div>
-                    </div>
-                
-                    <div class="col-md-10 feature-group">
-                        <h4 class="section-header"><strong>Compression Specimen</strong></h4>
-                        <div class="mb-3">
-                            <label for="concrete_specimen" class="form-label">Compression Specimen: (optional)</label>
-                                <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
-                                title="If a compression specimen directly comparable to the NDT specimen exists, describe the geometric shape."></span>
-                            <select id="concrete_specimen" name="concrete_specimen" class="form-select">
-                                <option value="" selected disabled>Select an option</option>
-                                <option value="Cylinder">Cylinder</option>
-                                <option value="Cube">Cube</option>
-                                <option value="Cube">Core</option>
-                            </select>
-                            <div class="error-message" style="color: red; display: none;"></div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="height" class="form-label">Concrete Specimen Height (mm): (optional)</label>
-                                <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
-                                title="Enter the height of the compression specimen in millimeters."></span>
-                            <input type="number" id="height" name="height" class="form-control" step="any">
-                            <div class="error-message" style="color: red; display: none;"></div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="width_diameter" class="form-label">Concrete Specimen Width/Diameter (mm): (optional)</label>
-                                <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
-                                title="Enter the width (for cubes) and diameter (for cylinders & cores) of the compression specimen, in millimeters."></span>
-                            <input type="number" id="width_diameter" name="width_diameter" class="form-control" step="any">
-                            <div class="error-message" style="color: red; display: none;"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Right column -->
-                <!-- UPV-specific features --> 
-                <div class="col-md-6">
-                    <div id="indiv-upv-block" class="col-md-10 feature-group">
-                        <h4 class="section-header"><strong>UPV Details</strong></h4>
-                        <div class="mb-3">
-                            <label for="upv" class="form-label">UPV Device Brand and Model: <span class="text-danger">*</span>
-                                <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
-                                title="Enter the UPV device brand and model (in that order). Ensure the spelling is correct."></span>
-                            </label>
-                            <input type="text" id="upv_device_brand" name="upv_device_brand" class="form-control" required data-ndt="upv">
-                            <div class="error-message" style="color: red; display: none;"></div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="upv" class="form-label">Transducer Diameter (mm): (optional) </label>
-                                <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
-                                title="Enter the diameter of the transducer used during the UPV test, in millimeters."></span>
-                            <input type="number" id="upv_transd_diam" name="upv_transd_diam" class="form-control" step="any" data-ndt="upv" data-optional>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="upv" class="form-label">Transducer Frequency (kHz): (optional) </label>
-                                <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
-                                title="Enter the transducer frequency used during the UPV test, in kHz."></span>
-                            <input type="number" id="upv_transd_freq" name="upv_transd_freq" class="form-control" step="any" data-ndt="upv" data-optional>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="upv" class="form-label">UPV Standard: <span class="text-danger">*</span></label>
-                                <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
-                                title="Enter the guidelines which were followed when performing the UPV tests in 'Standard (year)' format."></span>
-                            <select id="upv_standard" name="upv_standard" class="form-select" required data-ndt="upv">
-                                <option value="" selected disabled>Select an option</option>
-                                <option value="ASTM C597 (1983)">ASTM C597 (1983)</option>
-                                <option value="ASTM C597 (1989)">ASTM C597 (1989)</option>
-                                <option value="ASTM C597 (1994)">ASTM C597 (1994)</option>
-                                <option value="ASTM C597 (2002)">ASTM C597 (2002)</option>
-                                <option value="ASTM C597 (2009)">ASTM C597 (2009)</option>
-                                <option value="ASTM C597 (2016)">ASTM C597 (2016)</option>
-                                <option value="ASTM C597 (2022)">ASTM C597 (2022)</option>
-                                <option value="bs4408_5">BS 4408: Part 5 (1974)</option>
-                                <option value="BS 4408: Part 5 (1974)">BS 1881-203 (1986)</option>
-                                <option value="EN 12504-4 (2004)">EN 12504-4 (2004)</option>
-                                <option value="EN 12504-4 (2004)">EN 12504-4 (2019)</option>
-                                <option value="EN 12504-4 (2004)">EN 12504-4 (2021)</option>
-                                <option value="IS 13311: Part 1 (1992)">IS 13311: Part 1 (1992)</option>
-                                <option value="UNE 83-308 (1986)">UNE 83-308 (1986)</option>
-                                <option value="NBR 8802 (2013)">NBR 8802 (2013)</option>
-                                <option value="other_upv">Other</option>
-                            </select>
-                            
-                            <!-- Hidden input for custom standard -->
-                            <div id="custom-upv-container" style="display: none; margin-top: 10px;">
-                                <label for="custom-upv" class="form-label">
-                                    Enter Custom UPV Standard: <span class="text-danger">*</span>
-                                </label>
-                                <input type="text" id="custom-upv" name="custom_upv" class="form-control" placeholder="Please enter the Standard (year)." data-ndt="upv">
-                                <div class="error-message text-danger" style="display:none;"></div>
-                            </div>
-
-                            <div class="error-message" style="color: red; display: none;"></div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="upv" class="form-label">Test Type: <span class="text-danger">*</span></label>
-                                <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" title="Select the UPV transmission configuration."></span>
-                            <select id="test_type" name="test_type" class="form-select" required data-ndt="upv">
-                                <option value="" selected disabled>Select an option</option>
-                                <option value="Direct">Direct</option>
-                                <option value="Semi-direct">Semi-direct</option>
-                                <option value="Indirect">Indirect</option>
-                            </select>
-                            <div class="error-message" style="color: red; display: none;"></div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="upv" class="form-label">Number of UPV Tests (at each location): <span class="text-danger">*</span></label>
-                                <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
-                                title="Enter the number of UPV tests performed at each test location. The final reported velocity should be the mean value."></span>
-                            <input type="number" id="no_upv_tests" name="no_upv_tests" class="form-control" required data-ndt="upv">
-                            <div class="error-message" style="color: red; display: none;"></div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="upv" class="form-label">Velocity, Vp (m/s): <span class="text-danger">*</span></label>
-                                <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" title="Enter the average longitudinal velocity, Vp, in meters per second."></span>
-                            <input type="number" id="velocity" name="velocity" class="form-control" required step="any" data-ndt="upv">
-                            <div class="error-message text-danger" style="color: red; display: none;"></div>
-                        </div>
-                    </div>
-
-<!-- RH-specific features -->
-
-                    <div id="indiv-rh-block" class="col-md-10 feature-group">
-                        <h4 class="section-header"><strong>Rebound Hammer Details</strong></h4>
-                        <div class="mb-3">
-                            <label for="rh" class="form-label">RH Device Brand and Model: <span class="text-danger">*</span></label>
-                                <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
-                                title="Enter the Rebound Hammer device brand and model (in that order). Ensure the spelling is correct.
-                                Don't forget to specify the type (e.g. Type N)"></span>
-                            <input type="text" id="rh_device_brand" name="rh_device_brand" class="form-control" required data-ndt="rh">
-                            <div class="error-message" style="color: red; display: none;"></div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="rh" class="form-label">RH Standard: <span class="text-danger">*</span></label>
-                                <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" 
-                                title="Enter the guidelines which were followed when performing the RH tests in 'Standard (year)' format."></span>
-                            <select id="rh_standard" name="rh_standard" class="form-select" required data-ndt="rh">
-                                <option value="" selected disabled>Select an option</option>
-                                <option value="ASTM C805 (1982)">ASTM C805 (1982)</option>
-                                <option value="ASTM C805 (1994)">ASTM C805 (1994)</option>
-                                <option value="ASTM C805 (1997)">ASTM C805 (1997)</option>
-                                <option value="ASTM C805 (2002)">ASTM C805 (2002)</option>
-                                <option value="ASTM C805 (2013)">ASTM C805 (2013)</option>
-                                <option value="ASTM C805 (2013)">ASTM C805/C805M (2018)</option>
-                                <option value="BS 4408: Part 4 (1971)">BS 4408: Part 4 (1971)</option>
-                                <option value="BS 1881-202 (1986)">BS 1881-202 (1986)</option>
-                                <option value="EN 12504-2 (2001)">EN 12504-2 (2001)</option>
-                                <option value="EN 12504-2 (2012)">EN 12504-2 (2012)</option>
-                                <option value="EN 12504-2 (2012)">EN 12504-2 (2021)</option>
-                                <option value="IS 13311: Part 2 (1992)">IS 13311: Part 2 (1992)</option>
-                                <option value="other_rh">Other</option>
-                            </select>
-
-                            <!-- Hidden input for custom standard -->
-                            <div id="custom-rh-container" style="display: none; margin-top: 10px;">
-                                <label for="custom-rh" class="form-label">
-                                    Enter Custom RH Standard: <span class="text-danger">*</span>
-                                </label>
-                                <input type="text" id="custom-rh" name="custom_rh" class="form-control" placeholder="Please enter the Standard (year)." data-ndt="rh">
-                                <div class="error-message text-danger" style="display:none;"></div>
-                            </div>
-
-                            <div class="error-message" style="color: red; display: none;"></div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="rh" class="form-label">Orientation: <span class="text-danger">*</span></label>
-                                <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" title="Enter the hammer orientation applied during the tests."></span>
-                            <select id="orientation" name="orientation" class="form-select" required data-ndt="rh">
-                                <option value="" selected disabled>Select an option</option>
-                                <option value="Horizontal">Horizontal</option>
-                                <option value="Vertical">Vertical</option>
-                            </select>
-                            <div class="error-message" style="color: red; display: none;"></div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="rh" class="form-label">Number of RH Tests (at each location): <span class="text-danger">*</span></label>
-                                <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" title="Enter the number of rebound hammer tests performed at each test location."></span>
-                            <input type="number" id="no_rh_tests" name="no_rh_tests" class="form-control" required data-ndt="rh">
-                            <div class="error-message" style="color: red; display: none;"></div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="rh" class="form-label">Rebound Number, RN: <span class="text-danger">*</span></label>
-                                <span class="bi bi-question-circle-fill info-icon" data-bs-toggle="tooltip" data-bs-placement="top" title="Enter the median rebound number obtained through testing."></span>
-                            <input type="number" id="rebound_number" name="rebound_number" class="form-control" required step="any" data-ndt="rh">
-                            <div class="error-message text-danger" style="color: red; display: none;"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Predict button -->
-    <div class="text-center">
-        <button id="predict-btn" type="submit" class="btn btn-predict btn-lg" style="display:none">Predict</button>
-    </div>
-
-</form>
-
-
-<!-- Prediction Modal -->
-<div class="modal fade" id="predictModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-md modal-dialog-centered">
+<!-- Prediction result -->
+<div class="modal fade" id="predictModal" tabindex="-1" aria-labelledby="predictModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable result-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title text-center w-100" id="predictModalLabel">Prediction</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <div>
+          <p class="eyebrow mb-1" id="result-method"></p>
+          <h2 class="modal-title h5" id="predictModalLabel">Predicted compressive strength</h2>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body text-center">
-        <h3 id="predict-result" class="fw-bold mb-4"></h3>
-        <p id="predict-text" class="mb-3"></p>
+      <div class="modal-body">
+        <div class="result-hero">
+          <div class="result-value"><span id="predict-result"></span><span class="unit">MPa</span></div>
+          <p class="result-sub">Equivalent 150&nbsp;&times;&nbsp;300&nbsp;mm cylinder strength</p>
+        </div>
+
+        <dl class="result-stats">
+          <div><dt>Typical error (RMSE)</dt><dd id="result-rmse"></dd></div>
+          <div><dt>Mean absolute error (MAE)</dt><dd id="result-mae"></dd></div>
+          <div><dt>Reliable range</dt><dd id="result-range"></dd></div>
+        </dl>
+
+        <div class="range-gauge" aria-hidden="true">
+          <div class="range-track"><div class="range-band"></div><div class="range-marker"></div></div>
+          <div class="range-scale"><span>0</span><span class="range-max"></span></div>
+        </div>
+
+        <div id="result-warnings" class="result-warnings" hidden>
+          <h3><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> Check before using this result</h3>
+          <ul></ul>
+        </div>
+
+        <details class="result-inputs">
+          <summary>Inputs used <span id="result-input-count"></span></summary>
+          <table class="table table-sm mb-0"><tbody id="result-input-table"></tbody></table>
+        </details>
+
+        <p id="predict-text" class="result-note">
+          Error figures are based on the model performance reported in Matthews et al. (2025) and apply within the range
+          of the training data. Indicative estimate to support engineering judgement, not a design value.
+        </p>
       </div>
-      <div class="modal-footer justify-content-center">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link-muted me-auto" id="result-copy"><i class="bi bi-clipboard" aria-hidden="true"></i> Copy result</button>
+        <button type="button" class="btn btn-outline-app" data-bs-dismiss="modal">Edit inputs</button>
+        <button type="button" class="btn btn-primary-app" id="result-new">New prediction</button>
       </div>
     </div>
   </div>
 </div>
-
-
-
-
-
-
-
-	

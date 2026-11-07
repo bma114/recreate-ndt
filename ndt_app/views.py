@@ -1,3 +1,4 @@
+import logging
 import os, json, gc
 import joblib
 import numpy as np
@@ -9,14 +10,16 @@ from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import render
 
 from .utils import normalise_to_150x300
+from . import stats
 
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-from sklearn.linear_model import LinearRegression
 import catboost as cb
 import traceback
 
 import re  # Required for regex replacements
 import environ
+
+logger = logging.getLogger(__name__)
 
 # Import environment variables
 env = environ.Env()
@@ -47,9 +50,13 @@ MODEL_PATTERN = "Models/{ndt}_catboost_model_fold{fold}_cmp.pkl"
 _models_cache = {}
 
 
-# Function to load scaler from S3
+# Function to load scaler from S3 (cached after the first request)
+_scaler_cache = {}
+
 def load_scaler(ndt):
-    """Fetches the scaler from S3 and returns the loaded object."""    
+    """Fetches the scaler from S3 and returns the loaded object."""
+    if ndt in _scaler_cache:
+        return _scaler_cache[ndt]
     file_stream = BytesIO()
     s3_client.download_fileobj(AWS_BUCKET_NAME, SCALER_PATH.format(ndt=ndt), file_stream)
     file_stream.seek(0)
@@ -58,7 +65,8 @@ def load_scaler(ndt):
     # Verify the scaler is a valid instance of a scikit-learn scaler
     if not isinstance(scaler, (MinMaxScaler, StandardScaler)):
         raise TypeError(f"Scaler wrong type: {type(scaler)}")
-    
+
+    _scaler_cache[ndt] = scaler
     return scaler
 
 # Function to load models from S3
@@ -143,7 +151,6 @@ def preprocess_features(features, ndt, scaler):
         mapped_features[model_feature_name] = feature_value
     
     # # Debugging: Print out the mapped features to check for correctness
-    print(f"Mapped Features: {mapped_features}")
 
     # Convert to DataFrame with the correct column names (use mapped_features and feature_order)
     df = pd.DataFrame([mapped_features], columns=feature_order)
@@ -158,14 +165,9 @@ def preprocess_features(features, ndt, scaler):
     categorical_df = categorical_df.apply(lambda col: col.str.lower().str.strip().str.replace(r'\s+', ' ', regex=True))
 
     # Debugging: Print out the DataFrame to check feature names, and entire categorical and numerical DataFrames
-    print(f"Feature DataFrame:\n{df.to_string(index=False)}")  # Print entire DataFrame
-    print(f"\nCategorical Data:\n{categorical_df.to_string(index=False)}")
-    print(f"\nNumerical Data:\n{numerical_df.to_string(index=False)}")
     
     # Apply transform to numerical data (we only scale numerical features)
-    print(f"Numerical Data before scaling:\n{numerical_df.to_string(index=False)}")
     scaled_numerical = scaler.transform(numerical_df)
-    print(f"Scaled Numerical Data:\n{scaled_numerical}")
     
     # Combine categorical and scaled numerical features
     processed_df = pd.concat([pd.DataFrame(scaled_numerical, columns=numerical_df.columns), categorical_df], axis=1)
@@ -176,12 +178,10 @@ def predict_strength(features, ndt, scaler):
     """Runs a prediction using all trained models and returns the average."""
     
     df = preprocess_features(features, ndt, scaler)
-    print(f"Input to model: {df}")  # Check what is being passed to the model
 
     # Determine the categorical feature indices using the same ordering as in training:
     cat_feature_indices = [df.columns.get_loc(col) for col in df.columns 
                            if col in categorical_features]
-    print(f"Categorical feature indices: {cat_feature_indices}")
 
     # Build a Pool with these indices so catboost knows which columns are categorical
     data_pool = cb.Pool(df, cat_features=cat_feature_indices)
@@ -194,55 +194,193 @@ def predict_strength(features, ndt, scaler):
     for m in models:
         p = m.predict(data_pool)[0]
         preds.append(p)
-    print(f"Raw predictions: {preds}")
 
     # Return the mean
     return float(np.mean(preds))
 
 
 
-##----------- Predictions for Indiviudal tab -----------##
+##----------- Predictions for Individual tab -----------##
 
-@csrf_exempt  # Disable CSRF for simplicity in testing
+# Hard limits for numeric inputs (physically sensible values); the form uses the same limits
+INDIV_NUMERIC_LIMITS = {
+    "specimen_age":    ("concrete age (days)", 1, 36500),
+    "velocity":        ("pulse velocity (m/s)", 1000, 7000),
+    "no_upv_tests":    ("number of UPV readings", 1, 100),
+    "upv_transd_freq": ("transducer frequency (kHz)", 10, 500),
+    "upv_transd_diam": ("transducer diameter (mm)", 10, 100),
+    "rebound_number":  ("rebound number", 10, 100),
+    "no_rh_tests":     ("number of impacts", 1, 200),
+    "design_strength": ("design strength (MPa)", 5, 150),
+    "max_agg":         ("maximum aggregate size (mm)", 2, 100),
+    "wc_ratio":        ("water/cement ratio", 0.15, 1.5),
+    "height":          ("specimen height (mm)", 20, 1000),
+    "width_diameter":  ("specimen width or diameter (mm)", 20, 500),
+}
+INDIV_REQUIRED = {
+    "common": ["country", "specimen_type", "specimen_age", "rebar_present"],
+    "upv":    ["upv_device_brand", "upv_standard", "test_type", "no_upv_tests", "velocity"],
+    "rh":     ["rh_device_brand", "rh_standard", "orientation", "no_rh_tests", "rebound_number"],
+}
+
+
+def validate_individual(ndt, features):
+    """Return (clean_features, errors). Mirrors the checks made in the browser."""
+    required = INDIV_REQUIRED["common"][:]
+    if ndt in ("upv", "sonreb"):
+        required += INDIV_REQUIRED["upv"]
+    if ndt in ("rh", "sonreb"):
+        required += INDIV_REQUIRED["rh"]
+
+    clean, errors = {}, []
+    for key, value in features.items():
+        if value is None or (isinstance(value, str) and not value.strip()):
+            continue
+        if key in INDIV_NUMERIC_LIMITS:
+            label, lo, hi = INDIV_NUMERIC_LIMITS[key]
+            try:
+                x = float(value)
+            except (TypeError, ValueError):
+                errors.append(f"{label} must be a number")
+                continue
+            if not np.isfinite(x) or not lo <= x <= hi:
+                errors.append(f"{label} must be between {lo:g} and {hi:g}")
+                continue
+            clean[key] = x
+        else:
+            clean[key] = str(value).strip()[:80]
+
+    missing = [k for k in required if k not in clean]
+    if missing:
+        errors.append("missing required fields: " + ", ".join(missing))
+    return clean, errors
+
+
+@csrf_exempt
 def predict_view(request):
     if request.method != 'POST':
-        return JsonResponse({'message':'Send a POST request with input data'}, status=405)
-    
+        return JsonResponse({'error': 'Send a POST request with input data.'}, status=405)
+
     try:
-        # Parse JSON data from request
         data = json.loads(request.body)
+    except (ValueError, TypeError):
+        return JsonResponse({"error": "The request could not be read."}, status=400)
 
-        ndt = data.get("ndt")
-        features = data.get("features", {})
+    ndt = data.get("ndt")
+    features = data.get("features", {})
+    if ndt not in ("upv", "rh", "sonreb") or not isinstance(features, dict):
+        return JsonResponse({"error": "Select a test method and fill in the form."}, status=400)
 
-        if ndt not in ["upv","rh","sonreb"] or not isinstance(features, dict):
-            return JsonResponse({"error":"Invalid request"}, status=400)
-        
-        # Load the correct scaler from S3
+    features, errors = validate_individual(ndt, features)
+    if errors:
+        return JsonResponse({"error": "Please check the inputs: " + "; ".join(errors) + "."}, status=400)
+
+    try:
         scaler = load_scaler(ndt)
-        
-        # Make prediction based on correct models
         prediction = predict_strength(features, ndt, scaler)
+    except Exception:  # model loading or prediction failure
+        logger.exception("Individual prediction failed")
+        return JsonResponse({"error": "The model could not make a prediction. Please try again."}, status=500)
 
-        # Reverse the transformation
-        if ndt in ("upv", "sonreb"):
-            prediction = np.exp(prediction) # Reverse the log transformation
-        elif ndt == "rh":
-            prediction = np.square(prediction) # Reverse the square root transformation
+    # Reverse the target transformation used in training
+    if ndt in ("upv", "sonreb"):
+        prediction = float(np.exp(prediction))
+    else:
+        prediction = float(np.square(prediction))
 
-        prediction_result = f"f<sub>c,cyl</sub> = {prediction:.2f} MPa"
-        print(f"Prediction Result: {prediction_result}")  # Debugging: Print prediction result
+    return JsonResponse({
+        "value": round(prediction, 2),
+        "prediction": f"f<sub>c,cyl</sub> = {prediction:.1f} MPa",
+    })
 
-        # Returning HTML formatted result
-        return JsonResponse({'prediction': prediction_result})
 
-    except Exception as e:
-        print(f"Error: {e}")  # Debugging: Print error message
-        return JsonResponse({'error': str(e)}, status=400)
-    
+
+##----------- Shared input handling for the DT+NDT and DT-only tabs -----------##
+
+MIN_CORES = 8          # minimum paired core tests (n)
+MIN_EXTRA = 3          # minimum additional NDT locations (m)
+
+# 5-95 % fractiles of f_c,cyl in the training databases (DRAFTv8, Section 3.1.5)
+TRAINING_FC_RANGE = {"upv": (8.34, 61.7), "rh": (11.5, 84.3), "sonreb": (11.1, 54.8)}
+
+
+class InputError(ValueError):
+    """Raised for user input problems; returned to the browser as a 400."""
+
+
+def _as_list(v):
+    if v is None:
+        return []
+    return v if isinstance(v, list) else [v]
+
+
+def read_table(data, columns, label):
+    """Read the parallel lists of a table, drop fully blank rows and reject
+    partly filled or non-numeric rows. Returns {column: [floats]}."""
+    lists = {c: _as_list(data.get(c)) for c in columns}
+    n_rows = max((len(v) for v in lists.values()), default=0)
+    out = {c: [] for c in columns}
+    for i in range(n_rows):
+        cells = [str(lists[c][i]).strip() if i < len(lists[c]) else "" for c in columns]
+        if all(x == "" for x in cells):
+            continue
+        if any(x == "" for x in cells):
+            raise InputError(f"{label}, row {i + 1}: please complete or delete this row.")
+        try:
+            vals = [float(x) for x in cells]
+        except ValueError:
+            raise InputError(f"{label}, row {i + 1}: non-numeric value.")
+        if any(not np.isfinite(v) or v <= 0 for v in vals):
+            raise InputError(f"{label}, row {i + 1}: values must be positive numbers.")
+        for c, v in zip(columns, vals):
+            out[c].append(v)
+    return out
+
+
+def normalisation_table(df_norm):
+    return [
+        {
+            "D": float(r.diameter_mm), "H": float(r.height_mm),
+            "class": int(r.diameter_class_mm), "H_over_D": float(r.H_over_D),
+            "fc_core": float(r.fc_raw_MPa), "factor": float(r.factor_applied),
+            "fc_cyl": float(r.fc_normalised_MPa), "note": r.note,
+        }
+        for r in df_norm.itertuples()
+    ]
+
+
+# Cached global database (plots only)
+_global_db_cache = {}
+
+def get_global_db(ndt):
+    if "xlsx" not in _global_db_cache:
+        obj = s3_client.get_object(Bucket=AWS_BUCKET_NAME, Key="data/Full Databases - Cleaned.xlsx")
+        _global_db_cache["xlsx"] = pd.ExcelFile(BytesIO(obj['Body'].read()))
+    sheet = {'upv': 'UPV', 'rh': 'Rebound Hammer', 'sonreb': 'SonReb'}[ndt]
+    if sheet not in _global_db_cache:
+        _global_db_cache[sheet] = _global_db_cache["xlsx"].parse(sheet_name=sheet)
+    return _global_db_cache[sheet]
+
+
+def _clean(obj):
+    """Make numpy types JSON-serialisable."""
+    if isinstance(obj, dict):
+        return {k: _clean(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_clean(v) for v in obj]
+    if isinstance(obj, np.generic):
+        return obj.item()
+    return obj
 
 
 ##----------- Predictions for Combined DT + NDT Tab -----------##
+
+NUMERIC_FEATS = {
+    "Specimen Age (days)", "Transducer Diameter (mm)", "Transducer Frequency (kHz)",
+    "No. UPV Tests", "No. RH Tests", "Vp", "RN", "Height (mm)", "Width/Diameter (mm)",
+    "Max Aggregate Size (mm)", "W/C Ratio", "Design Strength (MPa)",
+}
+
 
 @csrf_exempt
 def analyse_combined_view(request):
@@ -252,426 +390,223 @@ def analyse_combined_view(request):
     try:
         data = json.loads(request.body.decode('utf-8'))
 
+        ndt = _as_list(data.get('combined_ndt'))[0] if data.get('combined_ndt') else None
+        if ndt not in ("upv", "rh", "sonreb"):
+            raise InputError("Please select an NDT method.")
+        has_upv = ndt in ("upv", "sonreb")
+        has_rh = ndt in ("rh", "sonreb")
 
-        ndt = data['combined_ndt'][0]  # 'upv','rh' or 'sonreb'
-        print("🔧 Selected NDT:", ndt)
-
-        # card-level features: pm;y non-empty scalar card features
+        # Card-level features (one value for the whole test region)
         card_feats = {}
         for html_id, model_name in feature_mapping.items():
-            if html_id in data:
-                vals = data[html_id]
-                if isinstance(vals, list):
-                    v = vals[0].strip()
-                else:
-                    v = str(vals).strip()
+            vals = _as_list(data.get(html_id))
+            if not vals:
+                continue
+            v = str(vals[0]).strip()
+            if v == "":
+                continue
+            if model_name in NUMERIC_FEATS:
+                try:
+                    x = float(v)
+                except ValueError:
+                    raise InputError(f"'{html_id}' must be a number.")
+                if html_id in INDIV_NUMERIC_LIMITS:
+                    label, lo, hi = INDIV_NUMERIC_LIMITS[html_id]
+                    if not (np.isfinite(x) and lo <= x <= hi):
+                        raise InputError(f"The {label} must be between {lo:g} and {hi:g}.")
+                card_feats[model_name] = x
+            else:
+                card_feats[model_name] = v
+        card_feats["Core Specimen"] = "Core"     # every compression specimen is a core
 
-                # Skip if blank or missing
-                if v == "":
-                    continue
+        # Calibration set (n): paired cores and NDT
+        n_cols = (["velocity_n[]"] if has_upv else []) + (["rebound_number_n[]"] if has_rh else []) \
+                 + ["width_diameter_n[]", "height_n[]", "fc_n[]"]
+        n_tab = read_table(data, n_cols, "Calibration set")
+        # Additional set (m): NDT only
+        m_cols = (["velocity_m[]"] if has_upv else []) + (["rebound_number_m[]"] if has_rh else [])
+        m_tab = read_table(data, m_cols, "Additional NDT set")
 
-                # Convert numeric inputs to float:
-                numeric_feats = {
-                    "Specimen Age (days)", "Transducer Diameter (mm)",
-                    "Transducer Frequency (kHz)", "No. UPV Tests",
-                    "Vp", "RN", "Height (mm)", "Width/Diameter (mm)",
-                    "Max Aggregate Size (mm)", "W/C Ratio", "Design Strength (MPa)"
-                }
-                if model_name in numeric_feats:
-                    card_feats[model_name] = float(v)
-                else:
-                    card_feats[model_name] = v
+        # Hard limits on the table values (the form applies the same limits)
+        limits = {"velocity_n[]": ("pulse velocity", 1000, 7000), "velocity_m[]": ("pulse velocity", 1000, 7000),
+                  "rebound_number_n[]": ("rebound number", 10, 100), "rebound_number_m[]": ("rebound number", 10, 100),
+                  "width_diameter_n[]": ("core diameter (mm)", 20, 300), "height_n[]": ("core height (mm)", 20, 600),
+                  "fc_n[]": ("core strength (MPa)", 1, 200)}
+        for tab, label in ((n_tab, "Calibration set"), (m_tab, "Additional NDT set")):
+            for col, vals in tab.items():
+                name, lo, hi = limits[col]
+                for i, v in enumerate(vals):
+                    if not lo <= v <= hi:
+                        raise InputError(f"{label}, row {i + 1}: the {name} must be between {lo:g} and {hi:g}.")
 
-        # Every compression specimen is assumed to be a core
-        card_feats["Core Specimen"] = "Core"
+        n = len(n_tab["fc_n[]"])
+        m = len(m_tab[m_cols[0]])
+        if n < MIN_CORES:
+            raise InputError(f"At least {MIN_CORES} paired core tests are needed (got {n}).")
+        if m < MIN_EXTRA:
+            raise InputError(f"At least {MIN_EXTRA} additional NDT results are needed (got {m}).")
 
-        # Normalize compression strength for n-set
-        diam = data["width_diameter_n[]"]
-        height = data["height_n[]"]
-        raw_fc = data["fc_n[]"]
-        df_norm = normalise_to_150x300(diam, height, raw_fc)
+        # Normalise core strengths to the 150 x 300 mm cylinder
+        df_norm = normalise_to_150x300(n_tab["width_diameter_n[]"], n_tab["height_n[]"], n_tab["fc_n[]"])
+        fc_n = df_norm["fc_normalised_MPa"].values
 
-        # Build calibration dataframe (n_set)
-        n_rows = len(data['fc_n[]'])
-        n_dict = {}
-        # For UPV / RH columns:
-        if ndt in ('upv','sonreb'):
-            n_dict['Vp']               = [ float(x) for x in data['velocity_n[]'] ]
-        if ndt in ('rh','sonreb'):
-            n_dict['RN']               = [ float(x) for x in data['rebound_number_n[]'] ]
-        # Core dimensions and fc
-        n_dict['Width/Diameter (mm)']  = [ float(x) for x in data['width_diameter_n[]'] ]
-        n_dict['Height (mm)']          = [ float(x) for x in data['height_n[]'] ]
-        n_dict['fc,cyl (MPa)']         = df_norm["fc_normalised_MPa"].tolist()
+        # Model inputs for each location
+        def row_dict(vp, rn, h, d):
+            r = dict(card_feats)
+            if has_upv:
+                r["Vp"] = vp
+            if has_rh:
+                r["RN"] = rn
+            r["Height (mm)"] = h
+            r["Width/Diameter (mm)"] = d
+            return r
 
-        n_df = pd.DataFrame(n_dict)
-        n_df = n_df.rename(columns={
-            'Width/Diameter (mm)': 'width_diameter',
-            'Height (mm)': 'height',
-        })
+        vp_n = n_tab.get("velocity_n[]", [None] * n)
+        rn_n = n_tab.get("rebound_number_n[]", [None] * n)
+        vp_m = m_tab.get("velocity_m[]", [None] * m)
+        rn_m = m_tab.get("rebound_number_m[]", [None] * m)
+        # The additional locations have no core: use the mean core geometry
+        h_avg = float(np.mean(n_tab["height_n[]"]))
+        d_avg = float(np.mean(n_tab["width_diameter_n[]"]))
+        n_rows = [row_dict(vp_n[i], rn_n[i], n_tab["height_n[]"][i], n_tab["width_diameter_n[]"][i]) for i in range(n)]
+        m_rows = [row_dict(vp_m[i], rn_m[i], h_avg, d_avg) for i in range(m)]
 
-
-        # Duplicate card_feats across n rows
-        for k,v in card_feats.items():
-            n_df[k] = v
-
-        # Complementary dataframe (m_set)
-        # m_rows = len(data['velocity_m[]'] or data['rebound_number_m[]'])
-        m_dict = {}
-        if ndt in ('upv','sonreb'):
-            m_dict['Vp']               = [ float(x) for x in data['velocity_m[]'] ]
-        if ndt in ('rh','sonreb'):
-            m_dict['RN']               = [ float(x) for x in data['rebound_number_m[]'] ]
-
-        m_df = pd.DataFrame(m_dict)
-
-        # Propagate average core dimensions into complementary set
-        avg_height = n_df['height'].mean()
-        avg_width  = n_df['width_diameter'].mean()
-
-        # assign to every row
-        m_df['height']          = [avg_height] * len(m_df)
-        m_df['width_diameter']  = [avg_width] * len(m_df)
-
-        for k,v in card_feats.items():
-            m_df[k] = v
-
-        # GLOBAL calibration via CatBoost
-        # preprocess_features expects a single-row dict, so map each row:
+        # GLOBAL calibration: ensemble of the 10 CatBoost models
         scaler = load_scaler(ndt)
-        models  = get_models(ndt)
+        models = get_models(ndt)
+        X_n = pd.concat([preprocess_features(r, ndt, scaler) for r in n_rows], ignore_index=True)
+        X_m = pd.concat([preprocess_features(r, ndt, scaler) for r in m_rows], ignore_index=True)
 
-        # Build and preprocess each row individually, then concat:
-        n_dicts = []
-        for _, row in n_df.iterrows():
-            d = row.to_dict()                      
-            d.update(card_feats)                   # now contains all the card inputs
-            n_dicts.append(d)
+        # Average the 10 models in their training space, then back-transform
+        # (same as the Individual tab and the research code)
+        raw_n = np.mean([mdl.predict(X_n) for mdl in models], axis=0)
+        raw_m = np.mean([mdl.predict(X_m) for mdl in models], axis=0)
+        if ndt in ("upv", "sonreb"):              # trained on ln(fc)
+            pred_n, pred_m = np.exp(raw_n), np.exp(raw_m)
+        else:                                      # RH trained on sqrt(fc)
+            pred_n, pred_m = np.square(raw_n), np.square(raw_m)
 
-        # preprocess each
-        processed_n = [ preprocess_features(d, ndt, scaler) for d in n_dicts ]
-        X_n = pd.concat(processed_n, ignore_index=True)
+        glob = stats.calibrated(fc_n, np.log(pred_n), np.log(pred_m), p=1, shift=True)
+        glob["pred_n_unshifted"] = pred_n.tolist()
+        glob["pred_m_unshifted"] = pred_m.tolist()
 
-        m_dicts = []
-        for _, row in m_df.iterrows():
-            d = row.to_dict()                      
-            d.update(card_feats)                   # now contains all the card inputs
-            m_dicts.append(d)
+        # LOCAL calibration: log-log least squares, ln f = a + b ln Vp (+ c ln RN)
+        def design(vp, rn, k):
+            cols = [np.ones(k)]
+            if has_upv:
+                cols.append(np.log(vp))
+            if has_rh:
+                cols.append(np.log(rn))
+            return np.column_stack(cols)
 
-        # preprocess each
-        processed_m = [ preprocess_features(d, ndt, scaler) for d in m_dicts ]
-        X_m = pd.concat(processed_m, ignore_index=True)
+        A_n = design(np.array(vp_n, dtype=float), np.array(rn_n, dtype=float), n)
+        A_m = design(np.array(vp_m, dtype=float), np.array(rn_m, dtype=float), m)
+        y = np.log(fc_n)
+        p_loc = A_n.shape[1]
+        if np.linalg.matrix_rank(A_n) < p_loc:
+            raise InputError("Local calibration needs NDT values that vary between the cores.")
+        coef, *_ = np.linalg.lstsq(A_n, y, rcond=None)
+        ln_fit_n, ln_fit_m = A_n @ coef, A_m @ coef
+        ss_res = float(np.sum((y - ln_fit_n) ** 2))
+        ss_tot = float(np.sum((y - y.mean()) ** 2))
+        r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
 
-        # get ensemble predictions, reversing the training transform:
-        n_preds, m_preds = [], []
-        for mdl in models:
-            raw_n = mdl.predict(X_n)
-            raw_m = mdl.predict(X_m)
-            if ndt in ("upv", "sonreb"):
-                n_preds.append(np.exp(raw_n))
-                m_preds.append(np.exp(raw_m))
-            else:  
-                n_preds.append(np.square(raw_n))
-                m_preds.append(np.square(raw_m))
-        n_pred = np.mean(n_preds, axis=0)
-        m_pred = np.mean(m_preds, axis=0)
+        loc = stats.calibrated(fc_n, ln_fit_n, ln_fit_m, p=p_loc, shift=False)
+        names = ["a"] + (["b_Vp"] if has_upv else []) + (["c_RN" if has_upv else "b_RN"] if has_rh else [])
+        loc["coefficients"] = {k: float(v) for k, v in zip(names, coef)}
+        loc["R2_log"] = r2
 
-        # Statistical analysis:
-        n = len(n_pred)
-        m = len(m_pred)
-        fc_is_n = n_df['fc,cyl (MPa)'].values
+        # Local plot: data and fitted curve (other variable at its geometric mean)
+        def curve(var):
+            vals = np.array((vp_n + vp_m) if var == "Vp" else (rn_n + rn_m), dtype=float)
+            xs = np.linspace(vals.min(), vals.max(), 50)
+            ln_y = coef[0]
+            if has_upv:
+                vp = xs if var == "Vp" else np.exp(np.mean(np.log(vp_n)))
+                ln_y = ln_y + coef[1] * np.log(vp)
+            if has_rh:
+                rn = xs if var == "RN" else np.exp(np.mean(np.log(rn_n)))
+                ln_y = ln_y + coef[-1] * np.log(rn)
+            return {"x": xs.tolist(), "y": np.exp(np.broadcast_to(ln_y, xs.shape)).tolist()}
 
-        # Mean value of 'fc_is' in subset n
-        fcm_is = np.mean(fc_is_n)
-        
-        # Mean of predictions in subset m
-        fcm_m_is_global = np.mean(m_pred)
-        fcm_m_is_log_global = np.mean(np.log(m_pred))
-
-        # Standard deviation of test set m_pred
-        sfc_is_test_global = np.sqrt(np.sum((m_pred - fcm_m_is_global) ** 2) / (m - 1))
-        sfc_is_test_log_global = np.sqrt(np.sum((np.log(m_pred) - fcm_m_is_log_global) ** 2) / (m - 1))
-        
-        # Standard deviation of the model prediction for subset n
-        s_mod_test_global = np.sqrt(np.sum((fc_is_n - n_pred) ** 2) / (n - 2))
-        s_mod_test_log_global = np.sqrt(np.sum((np.log(fc_is_n) - np.log(n_pred)) ** 2) / (n - 2))
-        
-        # Overall standard deviation
-        sfc_is_global = np.sqrt(sfc_is_test_global ** 2 + s_mod_test_global ** 2)
-        sfc_is_log_global = np.sqrt(sfc_is_test_log_global ** 2 + s_mod_test_log_global ** 2)
-
-        # Calculate effective degree of freedom of total population
-        n_eff_global = round(((sfc_is_test_global**2 + s_mod_test_global**2)**2)/((s_mod_test_global**4 / (n - 2)) + (sfc_is_test_global**4 / (m - 1))))
-        k_neff_global = 1.71988 + 0.935204 * np.exp(-0.151838 * (n_eff_global + 1))
-        k_dneff_global = 3.337755 + (19313890 - 3.337755)/(1 + ((n_eff_global + 1) / 0.005167562)**2.209513)
-        
-        # Overall coefficient of variation
-        Vfc_is_log_global = np.sqrt(np.exp(sfc_is_log_global ** 2) - 1)
-        Vfc_is_corr_global = Vfc_is_log_global * (k_dneff_global / (0.8 * 3.8))
-       
-        # Charactersitic strengths (should be the same)
-        fck_is_global = fcm_m_is_global - k_neff_global * sfc_is_global                      # For normal distribution
-        fck_is_log_global = np.exp(fcm_m_is_log_global - k_neff_global * sfc_is_log_global)  # For lognormal distribution
-
-        bias_norm_global = fcm_m_is_global / fck_is_global              # If Normal distribution is assumed
-        bias_log_global = np.exp(k_neff_global * Vfc_is_log_global)     # If Lognormal distribution is assumed
-
-        # LOCAL calibration
-        if ndt == "sonreb":
-            Xn_lr = n_df[['Vp', 'RN']]
-            Xm_lr = m_df[['Vp', 'RN']]
-        elif ndt == "upv":
-            Xn_lr = n_df[['Vp']]; Xm_lr = m_df[['Vp']]
-        else:
-            Xn_lr = n_df[['RN']]; Xm_lr = m_df[['RN']]
-
-        # Single arrays for plotting
-        if ndt == "sonreb":
-            vp_vals = Xn_lr["Vp"].tolist()
-            rn_vals = Xn_lr["RN"].tolist()
-        else:
-            vp_vals = []
-            rn_vals = []
-            if ndt == "upv":
-                vp_vals = Xn_lr.values.flatten().tolist()
-            else: 
-                rn_vals = Xn_lr.values.flatten().tolist()
-        
-        lr = LinearRegression().fit(Xn_lr, fc_is_n)
-        r2 = float(lr.score(Xn_lr, fc_is_n))
-
-        n_pred_lr = lr.predict(Xn_lr)
-        m_pred_lr = lr.predict(Xm_lr)
-
-        # LOCAL Statistical analysis:        
-        # Mean of predictions in subset m
-        fcm_m_is_local = np.mean(m_pred_lr)
-        fcm_m_is_log_local = np.mean(np.log(m_pred_lr))
-
-        # Standard deviation of test set m_pred
-        sfc_is_test_local = np.sqrt(np.sum((m_pred_lr - fcm_m_is_local) ** 2) / (m - 1))
-        sfc_is_test_log_local = np.sqrt(np.sum((np.log(m_pred_lr) - fcm_m_is_log_local) ** 2) / (m - 1))
-        
-        # Standard deviation of the model prediction for subset n
-        s_mod_test_local = np.sqrt(np.sum((fc_is_n - n_pred_lr) ** 2) / (n - 2))
-        s_mod_test_log_local = np.sqrt(np.sum((np.log(fc_is_n) - np.log(n_pred_lr)) ** 2) / (n - 2))
-        
-        # Overall standard deviation
-        sfc_is_local = np.sqrt(sfc_is_test_local ** 2 + s_mod_test_local ** 2)
-        sfc_is_log_local = np.sqrt(sfc_is_test_log_local ** 2 + s_mod_test_log_local ** 2)
-        
-        # Calculate effective degree of freedom of total population
-        n_eff_local = round(((sfc_is_test_local**2 + s_mod_test_local**2)**2)/((s_mod_test_local**4 / (n - 2)) + (sfc_is_test_local**4 / (m - 1))))
-        k_neff_local = 1.71988 + 0.935204 * np.exp(-0.151838 * (n_eff_local + 1))
-        k_dneff_local = 3.337755 + (19313890 - 3.337755)/(1 + (n_eff_local / 0.005167562)**2.209513)
-
-        # Coefficient of variation
-        Vfc_is_log_local = np.sqrt(np.exp(sfc_is_log_local ** 2) - 1)
-        Vfc_is_corr_local = Vfc_is_log_local * (k_dneff_local / (0.8 * 3.8))
-        
-        # Charactersitic strengths (should be the same)
-        fck_is_local = fcm_m_is_local - k_neff_local * sfc_is_local                      # For normal distribution
-        fck_is_log_local = np.exp(fcm_m_is_log_local - k_neff_local * sfc_is_log_local)  # For lognormal distribution
-
-        bias_norm_local = fcm_m_is_local / fck_is_local              # If Normal distribution is assumed
-        bias_log_local = np.exp(k_neff_local * Vfc_is_log_local)     # If Lognormal distribution is assumed
-
-        # Pull Excel data for plotting
-        obj = s3_client.get_object(Bucket=AWS_BUCKET_NAME, Key="data/Full Databases - Cleaned.xlsx")
-        xlsx = pd.ExcelFile(BytesIO(obj['Body'].read()))
-
-        sheet_map = {'upv': 'UPV', 'rh': 'Rebound Hammer', 'sonreb': 'SonReb'}
-        sheet = sheet_map[ndt]
-        df_global = xlsx.parse(sheet_name=sheet)
-
-
-        # build the summary dictionaries
-        global_summary = {
-            "f<sub>cm,n,is</sub>": fcm_is,                    # Mean of the calibration set
-            "f<sub>cm,m,is</sub>": fcm_m_is_global,           # Mean of the complementary set
-            "s<sub>fc,is</sub>": sfc_is_global,               # Overall std dev (Normal)
-            "V<sub>fc</sub>": Vfc_is_log_global,              # CoV (lognormal)
-            "f<sub>ck,is</sub>": float(fck_is_log_global),    # Characteristic strength (lognormal)
-        }
-        local_summary = {
-            "f<sub>cm,n,is</sub>": fcm_is,                   # Mean of the calibration set
-            "f<sub>cm,m,is</sub>": fcm_m_is_local,           # Mean of the complementary set
-            "s<sub>fc,is</sub>": sfc_is_local,               # Overall std dev (Normal)
-            "V<sub>fc</sub>": Vfc_is_log_local,              # CoV (lognormal)
-            "f<sub>ck,is</sub>": float(fck_is_log_local),    # Characteristic strength (lognormal)
-        }
-
-        # build detail dictionaries
-        global_details = {
-            "f<sub>cm,n,is</sub>": fcm_is,                    # Mean of the calibration set
-            "f<sub>cm,m,is</sub>": fcm_m_is_global,           # Mean of the complementary set (Normal)
-            "s<sub>fc,is,test</sub>": sfc_is_test_global,     # Test variation  (Normal)
-            "s<sub>theta,test</sub>": s_mod_test_global,      # Model variation (Normal)
-            "s<sub>fc,is</sub>": sfc_is_global,               # Overall std dev (Normal)
-            "V<sub>fc</sub>": Vfc_is_log_global,              # CoV (lognormal)
-            "V<sub>fc,is,corr</sub>": Vfc_is_corr_global,     # CoV (log-Student-t)
-            "n<sub>eff</sub>": n_eff_global,                  # DOF
-            "k<sub>n,eff</sub>": k_neff_global,               # Sample size factor
-            "f<sub>ck,is</sub>": float(fck_is_log_global),    # Characteristic strength (lognormal)
-            "n_pred": n_pred.tolist(),                        # Calibration set predictions
-            "m_pred": m_pred.tolist(),                        # Complementary set predictions
-        }
-        local_details = {
-            "f<sub>cm,n,is</sub>": fcm_is,                   # Mean of the calibration set
-            "f<sub>cm,m,is</sub>": fcm_m_is_local,           # Mean of the complementary set (Normal)
-            "s<sub>fc,is,test</sub>": sfc_is_test_local,     # Test variation  (Normal)
-            "s<sub>theta,test</sub>": s_mod_test_local,      # Model variation (Normal)
-            "s<sub>fc,is</sub>": sfc_is_local,               # Overall std dev (Normal)
-            "V<sub>fc</sub>": Vfc_is_log_local,              # CoV (lognormal)
-            "V<sub>fc,is,corr</sub>": Vfc_is_corr_local,     # CoV (log-Student-t)
-            "n<sub>eff</sub>": n_eff_local,                  # DOF
-            "k<sub>n,eff</sub>": k_neff_local,               # Sample size factor
-            "f<sub>ck,is</sub>": float(fck_is_log_local),    # Characteristic strength (lognormal)
-            "n_pred": n_pred_lr.tolist(),                    # Calibration set predictions
-            "m_pred": m_pred_lr.tolist(),                    # Complementary set predictions
-        }
-
-        if ndt == "sonreb":
-            # turn the numpy array into a list of floats
-            slope_vals = [float(c) for c in lr.coef_.tolist()]
-            local_details["Slope"] = slope_vals
-        else:
-            local_details["Slope"] = float(lr.coef_[0])
-
-        local_details["Intercept"] = float(lr.intercept_)
-        local_details["R^2"]       = r2
-
-        # Build plot dictionaries
         local_plots = {
-            "Xn_Vp": vp_vals,
-            "Xn_RN": rn_vals,
-            "Y":     fc_is_n.tolist()
+            "Xn_Vp": vp_n if has_upv else [],
+            "Xn_RN": rn_n if has_rh else [],
+            "Y": fc_n.tolist(),
+            "curve_Vp": curve("Vp") if has_upv else None,
+            "curve_RN": curve("RN") if has_rh else None,
         }
 
+        # Global database for the plots
+        df_global = get_global_db(ndt)
         if ndt in ("upv", "rh"):
-            global_x = df_global["Vp" if ndt=="upv" else "RN"].tolist()
-            global_plots = {
-                "X_global": global_x,
-                "Y_global": df_global["fc,cyl"].tolist()
-            }
+            global_plots = {"X_global": df_global["Vp" if ndt == "upv" else "RN"].tolist(),
+                            "Y_global": df_global["fc,cyl"].tolist()}
         else:
-            global_plots = {
-                "X_global_Vp": df_global["Vp"].tolist(),
-                "X_global_RN": df_global["RN"].tolist(),
-                "Y_global":    df_global["fc,cyl"].tolist()
-            }
+            global_plots = {"X_global_Vp": df_global["Vp"].tolist(),
+                            "X_global_RN": df_global["RN"].tolist(),
+                            "Y_global": df_global["fc,cyl"].tolist()}
 
-        print("✅ About to return JSON response")
-        return JsonResponse({
-            "global_summary":  global_summary,
-            "local_summary":   local_summary,
-            "global_details":  global_details,
-            "local_details":   local_details,
-            "local_plots":     local_plots,
-            "global_plots":    global_plots,
-        })
+        # Warnings
+        warnings_out = []
+        lo, hi = TRAINING_FC_RANGE[ndt]
+        if not (lo <= fc_n.mean() <= hi):
+            warnings_out.append(
+                f"The mean normalised core strength ({fc_n.mean():.1f} MPa) is outside the 5-95% range "
+                f"of the {ndt.upper()} training data ({lo}-{hi} MPa). Treat the global calibration with caution.")
+        for i, note in enumerate(df_norm["note"]):
+            if note:
+                warnings_out.append(f"Core {i + 1}: {note}.")
 
+        return JsonResponse(_clean({
+            "ndt": ndt,
+            "normalisation": normalisation_table(df_norm),
+            "global": glob,
+            "local": loc,
+            "dt_only": glob["dt_only"],
+            "local_plots": local_plots,
+            "global_plots": global_plots,
+            "warnings": warnings_out,
+        }))
 
-    except KeyError as e:
-        print("❌ Missing key:", e)
-        traceback.print_exc()
-        return JsonResponse({'error': f'Missing field: {e}'}, status=400)
-
-    except json.JSONDecodeError as e:
-        print("❌ JSON decode failed:", e)
-        traceback.print_exc()
+    except InputError as e:
+        return JsonResponse({'error': str(e)}, status=400)
+    except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
     except Exception as e:
-        print("🔥 Unexpected exception in analyse_combined_view:", e)
-        traceback.print_exc()         # <— this prints the full stacktrace
+        traceback.print_exc()
         return JsonResponse({'error': str(e)}, status=500)
-
 
 
 ##-------------- Predictions for DT Only Tab --------------##
 
 @csrf_exempt
 def analyse_dt_only_view(request):
-    print("🔥 analyse_dt_only_view called, method=", request.method)
     if request.method != 'POST':
-        return JsonResponse({'error':'POST required'}, status=405)
+        return JsonResponse({'error': 'POST required'}, status=405)
 
-    #  Parse JSON
     try:
-        body = request.body.decode('utf-8')
-        data = json.loads(body)
-        print("✅ Parsed JSON keys:", data.keys())
+        data = json.loads(request.body.decode('utf-8'))
+        tab = read_table(data, ["diam[]", "height[]", "fc[]"], "Core table")
+        n = len(tab["fc[]"])
+        if n < MIN_CORES:
+            raise InputError(f"At least {MIN_CORES} core tests are needed (got {n}).")
 
-    except Exception as e:
-        print("❌ JSON parsing error:", e)
+        df_norm = normalise_to_150x300(tab["diam[]"], tab["height[]"], tab["fc[]"])
+        dt = stats.dt_only(df_norm["fc_normalised_MPa"].values)
+
+        warnings_out = [f"Core {i + 1}: {note}." for i, note in enumerate(df_norm["note"]) if note]
+
+        return JsonResponse(_clean({
+            "dt_only": dt,
+            "normalisation": normalisation_table(df_norm),
+            "warnings": warnings_out,
+        }))
+
+    except InputError as e:
+        return JsonResponse({'error': str(e)}, status=400)
+    except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
-    
-    # Extract data arrays
-    try:
-        diam = list(map(float, data.get('diam[]', [])))
-        ht   = list(map(float, data.get('height[]', [])))
-        fc_raw   = list(map(float, data.get('fc[]', [])))
-    except KeyError as e:
-        return JsonResponse({'error': f'Missing field: {e}'}, status=400)  
-    except ValueError as e:
-        return JsonResponse({'error': 'Non-numeric value in input'}, status=400)
-
-    # Sample size
-    n = len(fc_raw)
-
-    # Add minimum requirement
-    if len(diam) < 8 or len(ht) < 8 or len(fc_raw) < 8:
-        return JsonResponse({'error':'Please fill at least 8 rows.'}, status=400)
-    
-    # Normalize the results
-    df_norm = normalise_to_150x300(diam, ht, fc_raw)
-    print("Normalisation Parameters:", df_norm)
-
-    # DT ONLY Statistical analysis:
-    fc_is_n = df_norm['fc_normalised_MPa'].values
-
-    # Sample Mean
-    fcm_is = np.mean(fc_is_n)
-    fcm_is_log = np.mean(np.log(fc_is_n))
-
-    # Standard deviation
-    sfc_is = np.sqrt(np.sum((fc_is_n - fcm_is) ** 2) / (n - 1))                 
-    sfc_is_log = np.sqrt(np.sum((np.log(fc_is_n) - fcm_is_log) ** 2) / (n - 1))
-    
-    # Sample size factor
-    k_n = 1.71988 + 0.935204 * np.exp(-0.151838 * (n))
-
-    # Coefficient of variation
-    Vfc_is = sfc_is / fcm_is                              
-    Vfc_is_log = np.sqrt(np.exp(sfc_is_log ** 2) - 1) 
-    Vfc_is_corr = Vfc_is_log * (k_n / (0.8 * 3.8))
-    
-    # Charactersitic strength
-    fck_is = fcm_is * np.exp(-k_n * Vfc_is_log) 
-
-    # Bias factor
-    bias_logn = np.exp(k_n * Vfc_is_log)
-
-    dt_summary = {
-        "Mean fc (MPa)":      f"{fcm_is:.2f}",
-        "Std Dev (MPa)":      f"{sfc_is:.2f}",
-        "V_fc,is":            f"{Vfc_is_log:.3f}",
-        "V_fc,is,corr":       f"{Vfc_is_corr:.3f}",
-        "n":                  f"{n}",
-        "k_n":                f"{k_n:.3f}",
-        "Characteristic fck": f"{fck_is:.3f}",
-        "Bias":               f"{bias_logn:.3f}",
-    }
-
-    print("✅ DT-only summary:", dt_summary)
-    return JsonResponse({
-        "dt_summary": dt_summary,
-    })
-
-
-# except Exception as e:
-#         return JsonResponse({'error': str(e)}, status=500)
-
-
-        
+    except Exception as e:
+        traceback.print_exc()
+        return JsonResponse({'error': str(e)}, status=500)

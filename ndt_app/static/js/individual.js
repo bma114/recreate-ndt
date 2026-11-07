@@ -1,257 +1,175 @@
-document.addEventListener("DOMContentLoaded", function() {
+document.addEventListener("DOMContentLoaded", initIndividual);
 
-    // To stay on the same tab at refresh - only need this once for the whole app
-    document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
-        el.addEventListener('shown.bs.tab', e => {
-        const target = e.target.getAttribute('data-bs-target')   // <button>
-                    || e.target.getAttribute('href');             // <a>
-        localStorage.setItem('ndt-last-tab', target);
-        });
-    });
+/* ==========================================================================
+   Individual predictions tab (uses the shared helpers in forms.js)
+   ========================================================================== */
 
-    /* on load: restore if we have one */
-    const saved = localStorage.getItem('ndt-last-tab');
-    if (saved) {
-        const trigger = document.querySelector(
-            `[data-bs-target="${saved}"],[href="${saved}"]`);
-        if (trigger) {
-            bootstrap.Tab.getOrCreateInstance(trigger).show();
-            // if the tab lives inside a dropdown, close the dropdown
-            const ddToggle = trigger.closest('.dropdown')?.querySelector('.dropdown-toggle');
-            if (ddToggle) bootstrap.Dropdown.getOrCreateInstance(ddToggle).hide();
-        }
-    }
+// Cross-validated performance, Matthews et al. (2025) Table 5
+const INDIV_METRICS = {
+  upv:    { name: "Ultrasonic pulse velocity", rmse: 4.24, mae: 2.96, lo: 8.3,  hi: 61.7 },
+  rh:     { name: "Rebound hammer",            rmse: 7.53, mae: 5.26, lo: 11.5, hi: 84.3 },
+  sonreb: { name: "SonReb (UPV + RH)",         rmse: 3.17, mae: 2.19, lo: 11.1, hi: 54.8 },
+};
 
-    /* always start at top-override browser scroll restoration */
-    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-    window.scrollTo({ top:0, left:0, behavior:'instant' });
+function initIndividual() {
+  const form = document.getElementById("indiv-form");
+  if (!form) return;
 
-    const ndtSelect           = document.getElementById("ndt");
-    const featureCard         = document.getElementById("indiv-features-card");
-    const upvBlock            = document.getElementById("indiv-upv-block");
-    const rhBlock             = document.getElementById("indiv-rh-block");
+  const fieldsWrap  = document.getElementById("indiv-fields");
+  const upvBlock    = document.getElementById("indiv-upv-block");
+  const rhBlock     = document.getElementById("indiv-rh-block");
+  const summary     = document.getElementById("indiv-error-summary");
+  const serverError = document.getElementById("indiv-server-error");
+  const predictBtn  = document.getElementById("predict-btn");
+  const modalEl     = document.getElementById("predictModal");
+  const modal       = bootstrap.Modal.getOrCreateInstance(modalEl);
+  returnFocusOnClose(modalEl, predictBtn);
+  const methodRadios = form.querySelectorAll('input[name="ndt"]');
+  let lastResultText = "";
 
-    // UPV-specific fields for custom standards
-    const upvSelect           = document.getElementById("upv_standard");
-    const customUpvContainer  = document.getElementById("custom-upv-container");
-    const customUpvInput      = document.getElementById("custom-upv");
+  const kit = createFieldKit({ form, scope: fieldsWrap, summary, onEdit: () => { serverError.hidden = true; } });
+  const currentNdt = () => form.querySelector('input[name="ndt"]:checked')?.value || "";
 
-    // RH-specific fields for custom standards
-    const rhSelect            = document.getElementById("rh_standard");
-    const customRhContainer   = document.getElementById("custom-rh-container");
-    const customRhInput       = document.getElementById("custom-rh");
+  const syncUpvOther = kit.bindOther(document.getElementById("upv_standard"),
+    document.getElementById("custom-upv-container"), document.getElementById("custom-upv"), "other_upv");
+  const syncRhOther = kit.bindOther(document.getElementById("rh_standard"),
+    document.getElementById("custom-rh-container"), document.getElementById("custom-rh"), "other_rh");
 
-    const form = document.getElementById('indiv-form');
-    form.addEventListener('submit', e => { e.preventDefault(); if (!validateIndividual()) return; showPredictModal(); }, true); 
+  /* ---------- show the blocks for the chosen method ---------- */
+  function updateBlocks() {
+    const ndt = currentNdt();
+    fieldsWrap.hidden = !ndt;
+    const showUpv = ndt === "upv" || ndt === "sonreb";
+    const showRh  = ndt === "rh"  || ndt === "sonreb";
+    upvBlock.hidden = !showUpv;
+    rhBlock.hidden  = !showRh;
+    // Hidden blocks: disable their controls so they are neither validated nor sent
+    upvBlock.querySelectorAll("input, select").forEach(el => { el.disabled = !showUpv; if (!showUpv) kit.clearField(el); });
+    rhBlock.querySelectorAll("input, select").forEach(el => { el.disabled = !showRh;  if (!showRh)  kit.clearField(el); });
+    syncUpvOther(); syncRhOther();
+    document.getElementById("ndt-error").hidden = true;
+    form.querySelector(".method-grid").classList.remove("is-invalid");
+    if (!summary.hidden) kit.refresh();
+  }
+  methodRadios.forEach(r => r.addEventListener("change", updateBlocks));
 
-    // Initially hide all feature sections
-    featureCard.style.display = "none";
-    upvBlock.style.display    = "none";
-    rhBlock.style.display     = "none";
-
-    function updateForm() {
-        const ndt = ndtSelect.value;
-        const predictBtn = document.getElementById("predict-btn");
-
-        // 1) Show/hide the whole card
-        featureCard.style.display = ndt ? "block" : "none";
-
-        // 2) Show/hide each sub-block
-        upvBlock.style.display = (ndt === "upv" || ndt === "sonreb") ? "block" : "none";
-        rhBlock.style.display  = (ndt === "rh"  || ndt === "sonreb") ? "block" : "none";
-
-        // whenever the NDT dropdown changes, toggle the button
-        ndtSelect.addEventListener("change", () => {
-            predictBtn.style.display = ndtSelect.value ? "inline-block" : "none";
-        });
-        // run once on load in case you're reloading with a value
-        predictBtn.style.display = ndtSelect.value ? "inline-block" : "none";
-
-        // 3) For every data-ndt field in those blocks, disable+remove-required if hidden,
-        //    or re-enable+restore-required if shown.
-        document
-        .querySelectorAll("#indiv-upv-block [data-ndt], #indiv-rh-block [data-ndt]")
-        .forEach(el => {
-            // visible if its block is shown
-            const isUpv = el.closest("#indiv-upv-block");
-            const isRh  = el.closest("#indiv-rh-block");
-            const shown = (isUpv   && upvBlock.style.display==="block")
-                        || (isRh    && rhBlock.style.display==="block");
-            if (shown) {
-            el.disabled = false;
-            if (el.dataset.wasRequired) {
-                el.setAttribute("required","");
-                delete el.dataset.wasRequired;
-            }
-            } else {
-            // remember if it was required
-            if (el.hasAttribute("required")) el.dataset.wasRequired = "true";
-            el.disabled = true;
-            el.removeAttribute("required");
-            el.classList.remove("is-invalid");
-            const err = el.parentElement.querySelector(".error-message");
-            if (err) err.style.display = "none";
-            }
-        });
-    }
-
-    // Function to handle 'Other' option for any select field
-    function handleCustomInput(selectEl, customBox, customInput, otherValue) {
-        selectEl.addEventListener('change', () => {
-            const useOther = selectEl.value === otherValue;
-            customBox.style.display = useOther ? 'block' : 'none';
-
-            if (useOther) {
-            customInput.setAttribute('required', 'true');
-            } else {
-            customInput.removeAttribute('required');
-            customInput.value = '';
-            // clear any prior red message
-            const err = customBox.querySelector('.error-message');
-            if (err) { err.innerText = ''; err.style.display = 'none'; }
-            }
-        });
-    }
-
-    // Attach event listeners for both UPV and RH fields
-    handleCustomInput(upvSelect, customUpvContainer, customUpvInput, "other_upv");
-    handleCustomInput(rhSelect, customRhContainer, customRhInput, "other_rh");
-
-    // Run function when selection changes
-    ndtSelect.addEventListener("change", updateForm);
-    updateForm();  // run once on page load, in case you have a default
-
-    // On valid submit, show modal with result + conditional text
-    window.showPredictModal = function() {
-        if (!validateIndividual()) return;
-        // 1) grab the NDT selection
-        const ndt = document.getElementById("ndt").value;
-
-        // 2) collect all of your feature inputs under the card
-        const featureEls = document.querySelectorAll("#indiv-features-card [name]");
-        const features = {};
-        featureEls.forEach(el => {
-            // if it's disabled or hidden, we skip it
-            if (el.disabled) return;
-            const val = el.value.trim();    // remove surrounding spaces
-            if (val === '') return;         // don't send blank entries
-            features[el.name] = el.value;
-        });
-
-        // 3) build the exact payload shape
-        const payload = { ndt, features };
-
-        console.log("▶️ Predict payload:", payload);
-
-        fetch("/predict/", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-        })
-        .then(r => {
-            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            return r.json();
-        })
-        .then(json => {
-            // show your modal & insert json.prediction
-            document.getElementById("predict-result").innerHTML = json.prediction;
-
-            // conditional text per NDT
-            let info = "";
-            if (ndt==="upv") {
-                info = "UPV predictions have an RMSE of 4.20 MPa, reliable between 8.5 - 59.6 MPa.";
-            } else if (ndt==="rh") {
-                info = "RH predictions have an RMSE of 7.56 MPa, reliable between 11.7 - 85.0 MPa.";
-            } else {
-                info = "SonReb predictions have an RMSE of 3.19 MPa, reliable between 11.3 - 58.7 MPa.";
-            }
-            document.getElementById("predict-text").innerText = info;
-
-            // Show modal
-            new bootstrap.Modal(document.getElementById("predictModal")).show();
-        })
-        .catch(err => {
-            console.error("Predict error:", err);
-            alert("Sorry, something went wrong. Check the console for details.");
-        });
-    }
-
-});
-
-
-function validateIndividual() {
-    let isValid = true;
-    const form = document.getElementById("indiv-form");
-
-    // Clear all previous errors
-    form.querySelectorAll(".error-message").forEach(div => {
-        div.innerText = "";
-        div.style.display = "none";
-    });
-    form.querySelectorAll(".is-invalid").forEach(el => {
-        el.classList.remove("is-invalid");
-    });
-
-    // 2) Validate each visible, required field
-    const requiredFields = form.querySelectorAll("input[required], select[required]");
-    requiredFields.forEach(field => {
-        // skip hidden or disabled
-        if (field.disabled || field.offsetParent === null) return;
-
-        // built-in validity check
-        if (!field.checkValidity()) {
-        const errDiv = field.parentElement.querySelector(".error-message");
-        errDiv.innerText = field.validationMessage;
-        errDiv.style.display = "block";
-        field.classList.add("is-invalid");
-        isValid = false;
-        }
-    });
-
-    // Custom 'other' checks
-    const upvSelect  = document.getElementById('upv_standard');
-    const upvCustom  = document.getElementById('custom-upv'); 
-    if (upvSelect?.value === 'other_upv') {
-      if (!upvCustom.value.trim()) {
-        let div = upvCustom.parentElement.querySelector('.error-message');
-        if (!div) {                           // create if template missing
-          div = document.createElement('div');
-          div.className = 'error-message text-danger';
-          upvCustom.parentElement.appendChild(div);
-        }
-        div.innerText     = 'Please enter the custom UPV Standard.';
-        div.style.display = 'block';
-        upvCustom.classList.add('is-invalid');
-        isValid = false;
+  function allProblems(show) {
+    if (!currentNdt()) {
+      if (show) {
+        const e = document.getElementById("ndt-error");
+        e.textContent = "Select a test method."; e.hidden = false;
+        form.querySelector(".method-grid").classList.add("is-invalid");
       }
+      return [{ id: "method-title", focus: methodRadios[0], msg: "Select a test method." }];
     }
+    return kit.fieldProblems(show);
+  }
+  kit.refresh = () => kit.renderSummary(allProblems(false));
 
-    const rhSelect  = document.getElementById('rh_standard');
-    const rhCustom  = document.getElementById('custom-rh'); 
-    if (rhSelect?.value === 'other_rh') {
-      if (!rhCustom.value.trim()) {
-        let div = rhCustom.parentElement.querySelector('.error-message');
-        if (!div) {                           // create if template missing
-          div = document.createElement('div');
-          div.className = 'error-message text-danger';
-          rhCustom.parentElement.appendChild(div);
-        }
-        div.innerText     = 'Please enter the custom RH Standard.';
-        div.style.display = 'block';
-        rhCustom.classList.add('is-invalid');
-        isValid = false;
-      }
+  /* ---------- submit ---------- */
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    kit.submitted = true;
+    serverError.hidden = true;
+    const problems = allProblems(true);
+    kit.showSummary(problems);
+    if (problems.length) return;
+
+    const ndt = currentNdt();
+    const features = {};
+    const used = [];
+    kit.controls().forEach(el => {
+      const v = el.value.trim();
+      if (!v || el.id.startsWith("custom-")) return;
+      let value = v;
+      if (el.id === "upv_standard" && v === "other_upv") value = document.getElementById("custom-upv").value.trim();
+      if (el.id === "rh_standard"  && v === "other_rh")  value = document.getElementById("custom-rh").value.trim();
+      if (isNum(el)) value = String(parseNum(v));
+      features[el.name] = isNum(el) ? parseNum(v) : value;
+      const label = el.closest(".field").querySelector("label");
+      const shown = el.tagName === "SELECT" && !v.startsWith("other_") ? el.selectedOptions[0].textContent : value;
+      const unit = el.closest(".input-group")?.querySelector(".input-group-text")?.textContent || "";
+      used.push([labelHtml(label), `${shown}${unit ? " " + unit : ""}`]);
+    });
+    const notes = kit.notes();
+
+    setButtonBusy(predictBtn, true, "Predict strength", "Predicting…");
+    try {
+      const json = await postJson("/predict/", { ndt, features });
+      showResult(ndt, json.value, used, notes);
+    } catch (err) {
+      showServerError(serverError, "The prediction could not be made.", err);
+    } finally {
+      setButtonBusy(predictBtn, false, "Predict strength", "Predicting…");
     }
+  });
 
-    // Focus the first invalid field, and alert once if any failed
-    if (!isValid) {
-        const firstErrorEl = form.querySelector(".is-invalid");
-        firstErrorEl?.focus();
-        alert("Please correct the highlighted fields.");
-    }
+  /* ---------- result ---------- */
+  function showResult(ndt, value, used, notes) {
+    const m = INDIV_METRICS[ndt];
+    document.getElementById("result-method").textContent = m.name;
+    document.getElementById("predict-result").textContent = fmt(value);
+    document.getElementById("result-rmse").textContent = `± ${fmt(m.rmse, 2)} MPa`;
+    document.getElementById("result-mae").textContent  = `${fmt(m.mae, 2)} MPa`;
+    document.getElementById("result-range").textContent = `${fmt(m.lo)}–${fmt(m.hi)} MPa`;
 
-    // console.log(`Validation result: ${isValid ? "✅ Passed" : "❌ Failed"}`);
-    console.log('validateIndividual result →', isValid);
+    // gauge: 0 to a round number above both the range and the prediction
+    const top = Math.ceil(Math.max(m.hi * 1.15, value * 1.1) / 10) * 10;
+    const pct = x => `${Math.min(100, Math.max(0, x / top * 100))}%`;
+    const gauge = modalEl.querySelector(".range-gauge");
+    gauge.querySelector(".range-band").style.left  = pct(m.lo);
+    gauge.querySelector(".range-band").style.width = `calc(${pct(m.hi)} - ${pct(m.lo)})`;
+    gauge.querySelector(".range-marker").style.left = pct(value);
+    gauge.querySelector(".range-max").textContent = `${top} MPa`;
+    const outside = value < m.lo || value > m.hi;
+    gauge.classList.toggle("is-outside", outside);
 
-    return isValid;
+    const warnings = [];
+    if (outside) warnings.push(`The prediction lies outside the reliable range for this model (${fmt(m.lo)}–${fmt(m.hi)} MPa), so the model is extrapolating.`);
+    warnings.push(...notes);
+    const wBox = document.getElementById("result-warnings");
+    wBox.querySelector("ul").innerHTML = warnings.map(w => `<li>${escapeHtml(w)}</li>`).join("");
+    wBox.hidden = !warnings.length;
+
+    modalEl.querySelector(".result-inputs").open = false;
+    document.getElementById("result-input-count").textContent = `(${used.length})`;
+    document.getElementById("result-input-table").innerHTML =
+      used.map(([k, v]) => `<tr><th scope="row">${k}</th><td>${escapeHtml(v)}</td></tr>`).join("");
+
+    lastResultText = `${m.name}: predicted fc,cyl = ${fmt(value)} MPa (150 x 300 mm cylinder). ` +
+      `Model RMSE ${fmt(m.rmse, 2)} MPa; reliable range ${fmt(m.lo)}-${fmt(m.hi)} MPa.\n` +
+      used.map(([k, v]) => `${k.replace(/<[^>]+>/g, "")}: ${v}`).join("\n");
+
+    showOwningTab(form);
+    modal.show();
+  }
+
+  document.getElementById("result-copy").addEventListener("click", e =>
+    copyWithFeedback(e.currentTarget, lastResultText, '<i class="bi bi-clipboard" aria-hidden="true"></i> Copy result'));
+
+  document.getElementById("result-new").addEventListener("click", () => {
+    modal.hide();
+    resetForm();
+  });
+
+  /* ---------- reset ---------- */
+  let clearDraft = () => {};
+  function resetForm() {
+    clearDraft();
+    form.reset();
+    kit.submitted = false;
+    summary.hidden = true;
+    serverError.hidden = true;
+    form.querySelectorAll("input, select").forEach(el => kit.clearField(el));
+    updateBlocks();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  document.getElementById("indiv-reset").addEventListener("click", resetForm);
+
+  updateBlocks();
+
+  // keep the inputs through a refresh
+  const draft = createDraft("individual", { form, radioName: "ndt" });
+  draft.restore();
+  clearDraft = draft.clear;
 }
